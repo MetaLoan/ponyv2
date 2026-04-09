@@ -1,0 +1,76 @@
+{
+  "version": "v16",
+  "description": "V16 archived model manifest for ComfyUI/RunPod",
+  "models": [
+    {
+      "name": "SDXL_Photorealistic_Mix_nsfw.safetensors",
+      "target": "models/checkpoints/SDXL_Photorealistic_Mix_nsfw.safetensors",
+      "url": "https://civitai.com/api/download/models/544282?token={{CIVITAI_TOKEN}}"
+    },
+    {
+      "name": "ip-adapter_pulid_sdxl_fp16.safetensors",
+      "target": "models/pulid/ip-adapter_pulid_sdxl_fp16.safetensors",
+      "url": "https://huggingface.co/huchenlei/ipadapter_pulid/resolve/main/ip-adapter_pulid_sdxl_fp16.safetensors"
+    },
+    {
+      "name": "EVA02_CLIP_L_336_psz14_s6B.pt",
+      "target": "models/clip_vision/EVA02_CLIP_L_336_psz14_s6B.pt",
+      "url": "https://huggingface.co/QuanSun/EVA-CLIP/resolve/main/EVA02_CLIP_L_336_psz14_s6B.pt"
+    },
+    {
+      "name": "1k3d68.onnx",
+      "target": "models/insightface/models/antelopev2/1k3d68.onnx",
+      "url": "https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/1k3d68.onnx"
+    },
+    {
+      "name": "2d106det.onnx",
+      "target": "models/insightface/models/antelopev2/2d106det.onnx",
+      "url": "https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/2d106det.onnx"
+    },
+    {
+      "name": "genderage.onnx",
+      "target": "models/insightface/models/antelopev2/genderage.onnx",
+      "url": "https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/genderage.onnx"
+    },
+    {
+      "name": "glintr100.onnx",
+      "target": "models/insightface/models/antelopev2/glintr100.onnx",
+      "url": "https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/glintr100.onnx"
+    },
+    {
+      "name": "scrfd_10g_bnkps.onnx",
+      "target": "models/insightface/models/antelopev2/scrfd_10g_bnkps.onnx",
+      "url": "https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/scrfd_10g_bnkps.onnx"
+    },
+    {
+      "name": "controlnet-depth-sdxl-1.0.safetensors",
+      "target": "models/controlnet/controlnet-depth-sdxl-1.0.safetensors",
+      "url": "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors"
+    },
+    {
+      "name": "controlnet-openpose-sdxl-1.0.safetensors",
+      "target": "models/controlnet/controlnet-openpose-sdxl-1.0.safetensors",
+      "url": "https://huggingface.co/thibaud/controlnet-openpose-sdxl-1.0/resolve/main/controlnet-openpose-sdxl-1.0.safetensors"
+    },
+    {
+      "name": "yolox_l.onnx",
+      "target": "custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/yolox_l.onnx",
+      "url": "https://huggingface.co/yzd-v/DWPose/resolve/main/yolox_l.onnx"
+    },
+    {
+      "name": "dw-ll_ucoco_384.onnx",
+      "target": "custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/dw-ll_ucoco_384.onnx",
+      "url": "https://huggingface.co/yzd-v/DWPose/resolve/main/dw-ll_ucoco_384.onnx"
+    },
+    {
+      "name": "4x-UltraSharp.pth",
+      "target": "models/upscale_models/4x-UltraSharp.pth",
+      "url": "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth"
+    },
+    {
+      "name": "NSFW_POV_AllInOne.safetensors",
+      "target": "models/loras/NSFW_POV_AllInOne.safetensors",
+      "url": "https://civitai.com/api/download/models/160240?token={{CIVITAI_TOKEN}}"
+    }
+  ]
+}
