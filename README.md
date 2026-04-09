@@ -36,6 +36,23 @@ curl -fsSL https://raw.githubusercontent.com/MetaLoan/ponyv2/main/scripts/instal
 curl -fsSL https://raw.githubusercontent.com/MetaLoan/ponyv2/main/scripts/diagnose_pulid.sh | bash -s -- /workspace/runpod-slim/ComfyUI
 ```
 
+## Serverless build (GitHub Actions)
+
+- Workflow file: `.github/workflows/build-image.yml`
+- Default image tag: `rpd-svls-sdxl-v0.1`
+- Image registry: `ghcr.io/<owner>/ponyv2:<tag>`
+
+Manual trigger:
+1. Open `Actions` -> `Build And Push Serverless Image`
+2. Click `Run workflow`
+3. Keep default tag `rpd-svls-sdxl-v0.1` or override
+
+Notes:
+- Dockerfile supports full packaging switch:
+  - `--build-arg BUILD_FULL_PACKAGE=1`
+  - optional `--build-arg CIVITAI_TOKEN=<token>`
+- Full packaging downloads models during image build and will be very large.
+
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.
