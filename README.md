@@ -30,6 +30,12 @@ curl -fsSL https://raw.githubusercontent.com/MetaLoan/ponyv2/main/scripts/instal
 
 - `config/v16_models.yaml`
 
+## PuLID diagnose (remote)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MetaLoan/ponyv2/main/scripts/diagnose_pulid.sh | bash -s -- /workspace/runpod-slim/ComfyUI
+```
+
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.
