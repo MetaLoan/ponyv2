@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]-}"
+if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+else
+  SCRIPT_DIR="$(pwd)"
+fi
+
+REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/MetaLoan/ponyv2/main}"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/../config/v16_models.yaml}"
 COMFY_ROOT="${1:-${COMFY_ROOT:-/workspace/ComfyUI}}"
 KEY_ENV_FILE="${KEY_ENV_FILE:-$SCRIPT_DIR/../key.env}"
@@ -25,14 +32,16 @@ load_key_env_file() {
   done < "$f"
 }
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  echo "[ERR] Config file not found: $CONFIG_FILE" >&2
-  exit 1
-fi
-
 if ! command -v python3 >/dev/null 2>&1; then
   echo "[ERR] python3 is required" >&2
   exit 1
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  tmp_cfg="/tmp/v16_models.yaml"
+  echo "[INFO] Config not found locally, fetching from repo raw..."
+  curl -fL --retry 3 --retry-delay 2 -o "$tmp_cfg" "$REPO_RAW_BASE/config/v16_models.yaml"
+  CONFIG_FILE="$tmp_cfg"
 fi
 
 load_key_env_file "$KEY_ENV_FILE"
