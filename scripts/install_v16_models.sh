@@ -84,6 +84,12 @@ ensure_git_repo() {
   local repo_dir="$2"
   local branch="${3:-}"
 
+  if [[ -d "$repo_dir" && ! -d "$repo_dir/.git" ]]; then
+    local backup_dir="${repo_dir}.preclone.$(date +%s)"
+    echo "[WARN] $repo_dir exists but is not a git repo, moving to $backup_dir"
+    mv "$repo_dir" "$backup_dir"
+  fi
+
   if [[ ! -d "$repo_dir/.git" ]]; then
     echo "[GIT ] clone $repo_url -> $repo_dir"
     if [[ -n "$branch" ]]; then
@@ -119,20 +125,6 @@ for item in cfg.get('models', []):
 PY
 )
 
-for row in "${entries[@]}"; do
-  IFS=$'\t' read -r name target url <<<"$row"
-
-  if [[ "$url" == *"{{CIVITAI_TOKEN}}"* ]]; then
-    if [[ -z "$CIVITAI_TOKEN" ]]; then
-      echo "[ERR] CIVITAI_TOKEN is empty but required for $name" >&2
-      exit 1
-    fi
-    url="${url//\{\{CIVITAI_TOKEN\}\}/$CIVITAI_TOKEN}"
-  fi
-
-  download_file "$url" "$COMFY_ROOT/$target"
-done
-
 if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   mkdir -p "$CUSTOM_NODES_ROOT"
 
@@ -147,5 +139,19 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   echo "[PIP ] extra runtime deps"
   python3 -m pip install onnxruntime-gpu insightface
 fi
+
+for row in "${entries[@]}"; do
+  IFS=$'\t' read -r name target url <<<"$row"
+
+  if [[ "$url" == *"{{CIVITAI_TOKEN}}"* ]]; then
+    if [[ -z "$CIVITAI_TOKEN" ]]; then
+      echo "[ERR] CIVITAI_TOKEN is empty but required for $name" >&2
+      exit 1
+    fi
+    url="${url//\{\{CIVITAI_TOKEN\}\}/$CIVITAI_TOKEN}"
+  fi
+
+  download_file "$url" "$COMFY_ROOT/$target"
+done
 
 echo "[DONE] V16 models installed into: $COMFY_ROOT"
