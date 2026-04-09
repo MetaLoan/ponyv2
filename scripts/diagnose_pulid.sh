@@ -62,12 +62,17 @@ tail -n 200 "$COMFY_ROOT/logs/comfyui.log" 2>/dev/null || true
 echo
 echo "=== 6) Targeted Error Scan ==="
 if command -v rg >/dev/null 2>&1; then
-  rg -n "PuLID|ModuleNotFoundError|ImportError|Traceback|Failed to import" "$COMFY_ROOT" \
-    -g '!models/**' -g '!.git/**' -g '!.venv*/*' | tail -n 200 || true
+  rg -n "PuLID|ModuleNotFoundError|ImportError|Traceback|Failed to import" \
+    "$COMFY_ROOT/custom_nodes" "$COMFY_ROOT/comfyui.log" "$COMFY_ROOT/logs" \
+    -g '!**/*.safetensors' -g '!**/*.onnx' -g '!**/*.pt' -g '!**/*.pth' \
+    -g '!**/*.bin' -g '!**/*.db' -g '!**/*.ckpt' -g '!**/*.zip' -g '!**/*.jpg' \
+    -g '!**/*.png' -g '!**/*.webp' -g '!**/*.mp4' -g '!**/*.gif' \
+    2>/dev/null | tail -n 120 || true
 else
-  grep -RniE "PuLID|ModuleNotFoundError|ImportError|Traceback|Failed to import" "$COMFY_ROOT" \
-    --exclude-dir=models --exclude-dir=.git --exclude-dir=.venv-cu128 --exclude-dir=__pycache__ \
-    2>/dev/null | tail -n 200 || true
+  grep -RniE "PuLID|ModuleNotFoundError|ImportError|Traceback|Failed to import" \
+    "$COMFY_ROOT/custom_nodes" "$COMFY_ROOT/logs" "$COMFY_ROOT/comfyui.log" \
+    --exclude-dir=.git --exclude-dir=__pycache__ \
+    2>/dev/null | tail -n 120 || true
 fi
 
 echo
