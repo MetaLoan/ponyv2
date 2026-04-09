@@ -1,6 +1,10 @@
 # ponyv2
 
 RunPod / ComfyUI one-shot model installer for V16 archived stack.
+Installer v2 includes:
+- V16 model downloads from YAML manifest
+- Auto install/update of `comfyui_controlnet_aux` and `PuLID_ComfyUI`
+- Auto pip install of node requirements and runtime deps (`onnxruntime-gpu`, `insightface`)
 
 ## One-line install
 
@@ -29,3 +33,5 @@ curl -fsSL https://raw.githubusercontent.com/MetaLoan/ponyv2/main/scripts/instal
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.
+- Set `INSTALL_CUSTOM_NODES=0` to skip custom node installation.
+- Restart ComfyUI after install so newly added nodes are registered.

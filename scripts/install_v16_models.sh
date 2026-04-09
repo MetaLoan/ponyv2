@@ -11,9 +11,11 @@ fi
 REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/MetaLoan/ponyv2/main}"
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/../config/v16_models.yaml}"
 COMFY_ROOT="${1:-${COMFY_ROOT:-/workspace/ComfyUI}}"
+CUSTOM_NODES_ROOT="${CUSTOM_NODES_ROOT:-$COMFY_ROOT/custom_nodes}"
 KEY_ENV_FILE="${KEY_ENV_FILE:-$SCRIPT_DIR/../key.env}"
 CIVITAI_TOKEN="${CIVITAI_TOKEN:-}"
 DEFAULT_CIVITAI_TOKEN="fd0f3beec0b56c19715e0161cca7505c"
+INSTALL_CUSTOM_NODES="${INSTALL_CUSTOM_NODES:-1}"
 
 load_key_env_file() {
   local f="$1"
@@ -70,6 +72,40 @@ download_file() {
   fi
 }
 
+install_requirements_if_exists() {
+  local req_file="$1"
+  [[ -f "$req_file" ]] || return 0
+  echo "[PIP ] $req_file"
+  python3 -m pip install -r "$req_file"
+}
+
+ensure_git_repo() {
+  local repo_url="$1"
+  local repo_dir="$2"
+  local branch="${3:-}"
+
+  if [[ ! -d "$repo_dir/.git" ]]; then
+    echo "[GIT ] clone $repo_url -> $repo_dir"
+    if [[ -n "$branch" ]]; then
+      git clone --depth 1 -b "$branch" "$repo_url" "$repo_dir"
+    else
+      git clone --depth 1 "$repo_url" "$repo_dir"
+    fi
+    return 0
+  fi
+
+  echo "[GIT ] update $repo_dir"
+  git -C "$repo_dir" fetch --depth 1 origin
+  if [[ -n "$branch" ]]; then
+    git -C "$repo_dir" checkout "$branch"
+    git -C "$repo_dir" pull --ff-only origin "$branch"
+  else
+    local current_branch
+    current_branch="$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD)"
+    git -C "$repo_dir" pull --ff-only origin "$current_branch"
+  fi
+}
+
 mapfile -t entries < <(python3 - "$CONFIG_FILE" <<'PY'
 import json
 import sys
@@ -96,5 +132,20 @@ for row in "${entries[@]}"; do
 
   download_file "$url" "$COMFY_ROOT/$target"
 done
+
+if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
+  mkdir -p "$CUSTOM_NODES_ROOT"
+
+  ensure_git_repo "https://github.com/Fannovel16/comfyui_controlnet_aux.git" \
+    "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux"
+  ensure_git_repo "https://github.com/cubiq/PuLID_ComfyUI.git" \
+    "$CUSTOM_NODES_ROOT/PuLID_ComfyUI"
+
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/PuLID_ComfyUI/requirements.txt"
+
+  echo "[PIP ] extra runtime deps"
+  python3 -m pip install onnxruntime-gpu insightface
+fi
 
 echo "[DONE] V16 models installed into: $COMFY_ROOT"
