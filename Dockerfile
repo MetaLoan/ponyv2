@@ -14,13 +14,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
+# ComfyUI runtime requires torch explicitly in most clean CUDA base images.
+# Pin to CUDA 12.4 wheels to match this image.
+RUN python3 -m pip install -U pip setuptools wheel && \
+    python3 -m pip install \
+      --index-url https://download.pytorch.org/whl/cu124 \
+      torch torchvision torchaudio
+
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
 RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
-RUN python3 -m pip install -U pip setuptools wheel && \
-    python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
+RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
 
 COPY app/ /workspace/runpod-slim/app/
 COPY config/v16_models.yaml /workspace/runpod-slim/config/v16_models.yaml

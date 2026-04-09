@@ -2,11 +2,21 @@ import os
 import shlex
 import subprocess
 import time
+from pathlib import Path
 
 import requests
 import runpod
 
 from handler import handler
+
+COMFY_LOG_PATH = Path("/tmp/comfy.log")
+
+
+def tail_comfy_log(lines: int = 120) -> str:
+    if not COMFY_LOG_PATH.exists():
+        return "<no /tmp/comfy.log found>"
+    data = COMFY_LOG_PATH.read_text(encoding="utf-8", errors="ignore").splitlines()
+    return "\n".join(data[-lines:]) if data else "<empty /tmp/comfy.log>"
 
 
 def wait_comfy_ready(api_url: str, timeout_sec: int) -> None:
@@ -24,7 +34,7 @@ def wait_comfy_ready(api_url: str, timeout_sec: int) -> None:
 
 def start_comfy_if_needed() -> None:
     api_url = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
-    boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "180"))
+    boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "360"))
     comfy_cmd = os.getenv(
         "COMFY_START_CMD",
         "python3 /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188",
@@ -39,7 +49,7 @@ def start_comfy_if_needed() -> None:
         pass
 
     print(f"[entry] Starting ComfyUI: {comfy_cmd}")
-    log = open("/tmp/comfy.log", "a", encoding="utf-8")
+    log = open(COMFY_LOG_PATH, "a", encoding="utf-8")
     proc = subprocess.Popen(
         shlex.split(comfy_cmd),
         stdout=log,
@@ -50,9 +60,16 @@ def start_comfy_if_needed() -> None:
     try:
         wait_comfy_ready(api_url, boot_timeout)
     except Exception:
+        log.flush()
         if proc.poll() is not None:
-            raise RuntimeError(f"ComfyUI exited early with code {proc.returncode}")
-        raise
+            raise RuntimeError(
+                f"ComfyUI exited early with code {proc.returncode}\n"
+                f"---- /tmp/comfy.log (tail) ----\n{tail_comfy_log()}"
+            )
+        raise RuntimeError(
+            f"ComfyUI did not become ready in time\n"
+            f"---- /tmp/comfy.log (tail) ----\n{tail_comfy_log()}"
+        )
 
     print("[entry] ComfyUI healthy")
 
