@@ -30,6 +30,9 @@ jobs:
           else
             echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
           fi
+          owner="${{ github.repository_owner }}"
+          owner_lc="$(echo "$owner" | tr '[:upper:]' '[:lower:]')"
+          echo "owner_lc=$owner_lc" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -45,5 +48,5 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ponyv2:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/ponyv2:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/ponyv2:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/ponyv2:latest
