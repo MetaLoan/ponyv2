@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
     "$PYTHON_BIN" -m pip install \
       --index-url https://download.pytorch.org/whl/cu128 \
+      --no-deps \
       "torch==2.10.0+cu128" \
       "torchaudio==2.10.0+cu128"
 RUN "$PYTHON_BIN" -m pip install \
