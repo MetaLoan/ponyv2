@@ -136,14 +136,13 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
 
   echo "[PIP ] extra runtime deps"
-  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4"
+  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"
   python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-    "scipy==1.17.1" \
-    "onnx==1.21.0" \
-    "onnxruntime==1.24.4" \
-    "onnxruntime-gpu==1.24.4" \
+    "scipy==1.11.4" \
+    "onnx==1.18.0" \
+    "onnxruntime-gpu==1.18.0" \
     "insightface==0.7.3"
-  echo "[PIP ] using RunPod-aligned pins: numpy 2.4.4 / scipy 1.17.1 / onnx 1.21.0 / ort-gpu 1.24.4 / insightface 0.7.3"
+  echo "[PIP ] using compatible pins: numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort-gpu 1.18.0 / insightface 0.7.3"
 fi
 
 for row in "${entries[@]}"; do

@@ -1,35 +1,31 @@
 # syntax=docker/dockerfile:1.7
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DEFAULT_TIMEOUT=120 \
-    PYTHON_BIN=python3 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
     COMFY_API_URL=http://127.0.0.1:8188
 
 WORKDIR /workspace/runpod-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-dev python3-venv python3-pip \
+    python3 python3-pip python3-venv python3-dev \
     build-essential \
     git curl ca-certificates libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
-# Pin to CUDA 12.8 wheels to match the current working RunPod baseline.
-RUN "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
-    "$PYTHON_BIN" -m pip install \
+# Pin to CUDA 12.4 wheels to match this image.
+RUN python3 -m pip install -U pip setuptools wheel && \
+    python3 -m pip install \
       --index-url https://download.pytorch.org/whl/cu124 \
-      --no-deps \
-      "torch==2.6.0+cu124" \
-      "torchvision==0.21.0+cu124" \
-      "torchaudio==2.6.0+cu124"
+      torch torchvision torchaudio
 
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
-RUN "$PYTHON_BIN" -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
+RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
 # Required custom nodes for V16 workflow
 RUN set -eux; \
@@ -48,24 +44,23 @@ RUN set -eux; \
       [ "$ok" = "1" ]; \
     done
 
-RUN "$PYTHON_BIN" -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
+RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
 # Avoid upstream PuLID requirements resolver instability in CI; install known runtime deps explicitly.
-RUN "$PYTHON_BIN" -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
+RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
     "facexlib==0.3.0" \
     "ftfy==6.3.1" \
     "timm==1.0.26"
 RUN set -eux; \
-    "$PYTHON_BIN" -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4"; \
-    "$PYTHON_BIN" -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-      "scipy==1.17.1" \
-      "onnx==1.21.0" \
-      "onnxruntime==1.24.4" \
-      "onnxruntime-gpu==1.24.4" \
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+      "scipy==1.11.4" \
+      "onnx==1.18.0" \
+      "onnxruntime-gpu==1.18.0" \
       "insightface==0.7.3"; \
-    echo "[PIP] installed RunPod-aligned runtime pins (python 3.12 / numpy 2.4.4 / scipy 1.17.1 / onnx 1.21.0 / ort 1.24.4 / insightface 0.7.3)"
+    echo "[PIP] installed compatible runtime pins (numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort 1.18.0 / insightface 0.7.3)"
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
-RUN "$PYTHON_BIN" -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
+RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
 
 COPY app/ /workspace/runpod-slim/app/
 COPY config/v16_models.yaml /workspace/runpod-slim/config/v16_models.yaml
