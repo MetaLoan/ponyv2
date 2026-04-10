@@ -40,6 +40,7 @@ def map_runpod_volume_if_present() -> None:
 
     candidate_sources = [
         RUNPOD_VOLUME_ROOT / "ComfyUI" / "models",
+        RUNPOD_VOLUME_ROOT / "runpod-slim" / "ComfyUI" / "models",
         RUNPOD_VOLUME_ROOT / "models",
     ]
     source_models = next((p for p in candidate_sources if p.exists() and p.is_dir()), None)
