@@ -191,8 +191,43 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> bool:
 def queue_prompt(prompt: Dict) -> str:
     payload = {"prompt": prompt, "client_id": str(uuid.uuid4())}
     r = requests.post(f"{COMFY_API_URL}/prompt", json=payload, timeout=60)
+    if r.status_code >= 400:
+        try:
+            detail = json.dumps(r.json(), ensure_ascii=False)
+        except Exception:
+            detail = r.text[:4000]
+        raise RuntimeError(f"Comfy /prompt rejected: status={r.status_code}, detail={detail}")
+    body = r.json()
+    if "prompt_id" not in body:
+        raise RuntimeError(f"Comfy /prompt missing prompt_id: {json.dumps(body, ensure_ascii=False)}")
+    return body["prompt_id"]
+
+
+def get_object_info() -> Dict:
+    r = requests.get(f"{COMFY_API_URL}/object_info", timeout=30)
     r.raise_for_status()
-    return r.json()["prompt_id"]
+    data = r.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Comfy /object_info returned unexpected payload")
+    return data
+
+
+def validate_required_node_types(prompt: Dict) -> None:
+    object_info = get_object_info()
+    available = set(object_info.keys())
+    required = {
+        str(node.get("class_type", "")).strip()
+        for node in prompt.values()
+        if isinstance(node, dict)
+    }
+    required.discard("")
+    missing = sorted(required - available)
+    if missing:
+        raise RuntimeError(
+            "Comfy missing required custom node types: "
+            + ", ".join(missing)
+            + ". Install/update corresponding custom_nodes and restart ComfyUI."
+        )
 
 
 def wait_history(prompt_id: str, timeout_sec: int = 1200) -> Dict:
@@ -283,6 +318,7 @@ def handler(event: Dict) -> Dict:
     use_upscale = apply_overrides(prompt, data)
     keep_intermediate = bool(data.get("keep_intermediate", KEEP_INTERMEDIATE_DEFAULT))
 
+    validate_required_node_types(prompt)
     prompt_id = queue_prompt(prompt)
     history_obj = wait_history(prompt_id)
     final_images, intermediate_images = collect_output_images(history_obj)
