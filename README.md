@@ -6,6 +6,25 @@ Installer v2 includes:
 - Auto install/update of `comfyui_controlnet_aux` and `PuLID_ComfyUI`
 - Auto pip install of node requirements and runtime deps (`onnxruntime-gpu`, `insightface`)
 
+## Verified baseline
+
+The current serverless build was stabilized around these changes:
+- Python `3.10`
+- CUDA base image `12.4.1`
+- PyTorch wheels from `cu124`
+- `numpy==1.26.4`
+- `scipy==1.11.4`
+- `onnx==1.18.0`
+- `onnxruntime-gpu==1.19.2`
+- `insightface==0.7.3`
+
+Recent fixes that matter operationally:
+- `b4dc551` reverted to the stable Python 3.10 / CUDA 12.4 path
+- `d5e2ca4` aligned custom-node dependency installation order with the reference pony build
+- `3b4f24b` fixed mixed NumPy installs by uninstalling the runtime stack before reinstall
+- `6f16ea4` aligned ONNX Runtime GPU with CUDA 12 so InsightFace can use `CUDAExecutionProvider`
+- `464ad4a` made R2 config accept both `R2_ACCOUNT_ID` and `R2_ENDPOINT`
+
 ## One-line install
 
 ```bash
@@ -58,6 +77,26 @@ Notes:
   - `DOCKERHUB_TOKEN`
 - Docker Hub image path will be:
   - `docker.io/<DOCKERHUB_USERNAME>/ponyv2:<tag>`
+
+## R2 environment variables
+
+The handler accepts either of these configuration styles:
+
+Style A:
+- `R2_ACCESS_KEY`
+- `R2_SECRET_KEY`
+- `R2_ACCOUNT_ID`
+- `R2_BUCKET`
+- `R2_PUBLIC_URL`
+
+Style B:
+- `R2_ACCESS_KEY`
+- `R2_SECRET_KEY`
+- `R2_ENDPOINT`
+- `R2_BUCKET`
+- `R2_PUBLIC_URL`
+
+When both are present, `R2_ENDPOINT` is used first. `R2_PUBLIC_URL` must be the public CDN/base URL used in returned file URLs.
 
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
