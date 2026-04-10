@@ -51,18 +51,11 @@ RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-bin
     "ftfy==6.3.1" \
     "timm==1.0.26"
 RUN set -eux; \
-    if python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4" && \
-       python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-         "onnxruntime-gpu==1.24.4" \
-         "insightface==0.7.3"; then \
-      echo "[PIP] installed preferred runtime pins (numpy 2.4.4 / ort 1.24.4 / insightface 0.7.3)"; \
-    else \
-      echo "[PIP] preferred pins unavailable in current build python; fallback to compatible set"; \
-      python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
-      python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-        "onnxruntime-gpu==1.18.0" \
-        "insightface==0.7.3"; \
-    fi
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+      "onnxruntime-gpu==1.18.0" \
+      "insightface==0.7.3"; \
+    echo "[PIP] installed compatible runtime pins (numpy 1.26.4 / ort 1.18.0 / insightface 0.7.3)"
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
 RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
