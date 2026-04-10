@@ -3,6 +3,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import traceback
 from pathlib import Path
 
 import requests
@@ -116,6 +117,10 @@ def start_comfy_if_needed() -> None:
 
 
 if __name__ == "__main__":
-    map_runpod_volume_if_present()
+    try:
+        map_runpod_volume_if_present()
+    except Exception:
+        print("[entry] WARN: failed to map /runpod-volume, continue without linking")
+        print(traceback.format_exc())
     start_comfy_if_needed()
     runpod.serverless.start({"handler": handler})
