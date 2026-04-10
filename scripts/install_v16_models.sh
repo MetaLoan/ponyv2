@@ -136,10 +136,18 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
 
   echo "[PIP ] extra runtime deps"
-  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4"
-  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-    "onnxruntime-gpu==1.24.4" \
-    "insightface==0.7.3"
+  if python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4" && \
+     python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+       "onnxruntime-gpu==1.24.4" \
+       "insightface==0.7.3"; then
+    echo "[PIP ] using preferred pins: numpy 2.4.4 / ort-gpu 1.24.4 / insightface 0.7.3"
+  else
+    echo "[PIP ] preferred pins unavailable; fallback to compatible pins for current Python"
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+      "onnxruntime-gpu==1.18.0" \
+      "insightface==0.7.3"
+  fi
 fi
 
 for row in "${entries[@]}"; do
