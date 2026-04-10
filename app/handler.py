@@ -260,15 +260,20 @@ def get_r2_client_and_config():
     access_key = os.getenv("R2_ACCESS_KEY", "")
     secret_key = os.getenv("R2_SECRET_KEY", "")
     account_id = os.getenv("R2_ACCOUNT_ID", "")
+    endpoint_url = os.getenv("R2_ENDPOINT", "").strip()
     bucket = os.getenv("R2_BUCKET", os.getenv("Bucket", ""))
     public_url = os.getenv("R2_PUBLIC_URL", os.getenv("PublicURL", ""))
     region = os.getenv("R2_REGION", "auto")
     prefix = os.getenv("R2_PREFIX", "outputs").strip("/")
 
-    if not (access_key and secret_key and account_id and bucket and public_url):
+    if endpoint_url:
+        endpoint_url = endpoint_url.rstrip("/")
+    elif account_id:
+        endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+
+    if not (access_key and secret_key and endpoint_url and bucket and public_url):
         return None, None
 
-    endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint_url,
