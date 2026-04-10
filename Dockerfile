@@ -4,6 +4,7 @@ FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
     COMFY_API_URL=http://127.0.0.1:8188
 
@@ -26,12 +27,25 @@ RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace
 RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
 # Required custom nodes for V16 workflow
-RUN mkdir -p /workspace/runpod-slim/ComfyUI/custom_nodes && \
-    git clone --depth 1 https://github.com/Fannovel16/comfyui_controlnet_aux.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux && \
-    git clone --depth 1 https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI && \
-    python3 -m pip install -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && \
-    python3 -m pip install -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
-    python3 -m pip install --no-cache-dir facexlib insightface onnxruntime-gpu ftfy timm
+RUN set -eux; \
+    mkdir -p /workspace/runpod-slim/ComfyUI/custom_nodes; \
+    for pair in \
+      "https://github.com/Fannovel16/comfyui_controlnet_aux.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux" \
+      "https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI"; do \
+      url="$(echo "$pair" | awk '{print $1}')"; \
+      dst="$(echo "$pair" | awk '{print $2}')"; \
+      ok=0; \
+      for i in 1 2 3; do \
+        git clone --depth 1 "$url" "$dst" && ok=1 && break || true; \
+        rm -rf "$dst"; \
+        sleep 5; \
+      done; \
+      [ "$ok" = "1" ]; \
+    done
+
+RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
+RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt
+RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir facexlib insightface onnxruntime-gpu ftfy timm
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
 RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
