@@ -1,5 +1,6 @@
 import os
 import shlex
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -10,6 +11,45 @@ import runpod
 from handler import handler
 
 COMFY_LOG_PATH = Path("/tmp/comfy.log")
+COMFY_ROOT = Path(os.getenv("COMFY_ROOT", "/workspace/runpod-slim/ComfyUI"))
+RUNPOD_VOLUME_ROOT = Path(os.getenv("RUNPOD_VOLUME_ROOT", "/runpod-volume"))
+
+
+def _replace_with_symlink(link_path: Path, source_path: Path) -> None:
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    if link_path.is_symlink():
+        current = link_path.resolve(strict=False)
+        if current == source_path.resolve(strict=False):
+            return
+        link_path.unlink()
+    elif link_path.exists():
+        backup = link_path.with_name(f"{link_path.name}.local.bak")
+        if backup.exists():
+            if backup.is_dir():
+                shutil.rmtree(backup)
+            else:
+                backup.unlink()
+        link_path.rename(backup)
+    link_path.symlink_to(source_path, target_is_directory=True)
+
+
+def map_runpod_volume_if_present() -> None:
+    # Serverless network volume is usually mounted at /runpod-volume.
+    if not RUNPOD_VOLUME_ROOT.exists():
+        return
+
+    candidate_sources = [
+        RUNPOD_VOLUME_ROOT / "ComfyUI" / "models",
+        RUNPOD_VOLUME_ROOT / "models",
+    ]
+    source_models = next((p for p in candidate_sources if p.exists() and p.is_dir()), None)
+    if not source_models:
+        print("[entry] /runpod-volume detected, but no models directory found; skip model linking")
+        return
+
+    target_models = COMFY_ROOT / "models"
+    _replace_with_symlink(target_models, source_models)
+    print(f"[entry] Linked models: {target_models} -> {source_models}")
 
 
 def tail_comfy_log(lines: int = 120) -> str:
@@ -75,5 +115,6 @@ def start_comfy_if_needed() -> None:
 
 
 if __name__ == "__main__":
+    map_runpod_volume_if_present()
     start_comfy_if_needed()
     runpod.serverless.start({"handler": handler})
