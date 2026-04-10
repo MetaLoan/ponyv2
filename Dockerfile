@@ -44,12 +44,15 @@ RUN set -eux; \
       [ "$ok" = "1" ]; \
     done
 
-RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
-# Avoid upstream PuLID requirements resolver instability in CI; install known runtime deps explicitly.
+RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
+    python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
+# Global fallback deps for node coexistence.
 RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
     "facexlib==0.3.0" \
     "ftfy==6.3.1" \
-    "timm==1.0.26"
+    "timm==1.0.26" \
+    "huggingface_hub" \
+    "onnxruntime-gpu==1.18.0"
 RUN set -eux; \
     python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
     python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \

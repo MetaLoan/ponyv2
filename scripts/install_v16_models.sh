@@ -133,9 +133,16 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   ensure_git_repo "https://github.com/cubiq/PuLID_ComfyUI.git" \
     "$CUSTOM_NODES_ROOT/PuLID_ComfyUI"
 
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/PuLID_ComfyUI/requirements.txt"
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
 
   echo "[PIP ] extra runtime deps"
+  python3 -m pip install --no-cache-dir --prefer-binary \
+    "facexlib==0.3.0" \
+    "ftfy==6.3.1" \
+    "timm==1.0.26" \
+    "huggingface_hub" \
+    "onnxruntime-gpu==1.18.0"
   python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"
   python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
     "scipy==1.11.4" \
