@@ -24,13 +24,11 @@ def _replace_with_symlink(link_path: Path, source_path: Path) -> None:
             return
         link_path.unlink()
     elif link_path.exists():
-        backup = link_path.with_name(f"{link_path.name}.local.bak")
-        if backup.exists():
-            if backup.is_dir():
-                shutil.rmtree(backup)
-            else:
-                backup.unlink()
-        link_path.rename(backup)
+        # Avoid cross-device rename errors on container volume mount points.
+        if link_path.is_dir():
+            shutil.rmtree(link_path)
+        else:
+            link_path.unlink()
     link_path.symlink_to(source_path, target_is_directory=True)
 
 
