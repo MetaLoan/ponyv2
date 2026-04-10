@@ -5,27 +5,36 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DEFAULT_TIMEOUT=120 \
+    PYTHON_BIN=/usr/local/bin/python3 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
     COMFY_API_URL=http://127.0.0.1:8188
 
 WORKDIR /workspace/runpod-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv python3-dev \
+    software-properties-common gnupg ca-certificates curl && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 python3.12-dev python3.12-venv python3.12-distutils \
     build-essential \
-    git curl ca-certificates libgl1 libglib2.0-0 && \
+    git libgl1 libglib2.0-0 && \
+    ln -sf /usr/bin/python3.12 /usr/local/bin/python3 && \
+    ln -sf /usr/bin/python3.12 /usr/local/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
-# Pin to CUDA 12.4 wheels to match this image.
-RUN python3 -m pip install -U pip setuptools wheel && \
-    python3 -m pip install \
-      --index-url https://download.pytorch.org/whl/cu124 \
-      torch torchvision torchaudio
+# Pin to CUDA 12.8 wheels to match the current working RunPod baseline.
+RUN "$PYTHON_BIN" -m ensurepip --upgrade && \
+    "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
+    "$PYTHON_BIN" -m pip install \
+      --index-url https://download.pytorch.org/whl/cu128 \
+      "torch==2.10.0+cu128" \
+      "torchvision==0.25.0+cu128" \
+      "torchaudio==2.10.0+cu128"
 
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
-RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
+RUN "$PYTHON_BIN" -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
 # Required custom nodes for V16 workflow
 RUN set -eux; \
@@ -44,23 +53,24 @@ RUN set -eux; \
       [ "$ok" = "1" ]; \
     done
 
-RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
+RUN "$PYTHON_BIN" -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
 # Avoid upstream PuLID requirements resolver instability in CI; install known runtime deps explicitly.
-RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
+RUN "$PYTHON_BIN" -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
     "facexlib==0.3.0" \
     "ftfy==6.3.1" \
     "timm==1.0.26"
 RUN set -eux; \
-    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
-    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
-      "scipy==1.11.4" \
-      "onnx==1.18.0" \
-      "onnxruntime-gpu==1.18.0" \
+    "$PYTHON_BIN" -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4"; \
+    "$PYTHON_BIN" -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+      "scipy==1.17.1" \
+      "onnx==1.21.0" \
+      "onnxruntime==1.24.4" \
+      "onnxruntime-gpu==1.24.4" \
       "insightface==0.7.3"; \
-    echo "[PIP] installed compatible runtime pins (numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort 1.18.0 / insightface 0.7.3)"
+    echo "[PIP] installed RunPod-aligned runtime pins (python 3.12 / numpy 2.4.4 / scipy 1.17.1 / onnx 1.21.0 / ort 1.24.4 / insightface 0.7.3)"
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
-RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
+RUN "$PYTHON_BIN" -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
 
 COPY app/ /workspace/runpod-slim/app/
 COPY config/v16_models.yaml /workspace/runpod-slim/config/v16_models.yaml
@@ -85,4 +95,4 @@ ENV WORKFLOW_API_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.
     R2_PREFIX=outputs
 
 WORKDIR /workspace/runpod-slim/app
-CMD ["python3", "runpod_entry.py"]
+CMD ["/usr/local/bin/python3", "runpod_entry.py"]
