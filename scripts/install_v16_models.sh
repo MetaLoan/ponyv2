@@ -134,10 +134,12 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
     "$CUSTOM_NODES_ROOT/PuLID_ComfyUI"
 
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
-  install_requirements_if_exists "$CUSTOM_NODES_ROOT/PuLID_ComfyUI/requirements.txt"
 
   echo "[PIP ] extra runtime deps"
-  python3 -m pip install onnxruntime-gpu insightface
+  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4"
+  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+    "onnxruntime-gpu==1.24.4" \
+    "insightface==0.7.3"
 fi
 
 for row in "${entries[@]}"; do

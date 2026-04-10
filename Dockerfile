@@ -46,7 +46,13 @@ RUN set -eux; \
 RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
 # Avoid upstream PuLID requirements resolver instability in CI; install known runtime deps explicitly.
 RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
-    facexlib insightface onnxruntime-gpu ftfy timm
+    "facexlib==0.3.0" \
+    "ftfy==6.3.1" \
+    "timm==1.0.26"
+RUN python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==2.4.4" && \
+    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+      "onnxruntime-gpu==1.24.4" \
+      "insightface==0.7.3"
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
 RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
