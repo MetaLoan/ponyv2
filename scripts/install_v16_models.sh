@@ -142,15 +142,15 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
     "ftfy==6.3.1" \
     "timm==1.0.26" \
     "huggingface_hub" \
-    "onnxruntime-gpu==1.18.0"
+    "onnxruntime-gpu==1.19.2"
   python3 -m pip uninstall -y numpy scipy onnx onnxruntime onnxruntime-gpu insightface || true
   python3 -m pip install --no-cache-dir --force-reinstall "numpy==1.26.4"
   python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
     "scipy==1.11.4" \
     "onnx==1.18.0" \
-    "onnxruntime-gpu==1.18.0" \
+    "onnxruntime-gpu==1.19.2" \
     "insightface==0.7.3"
-  echo "[PIP ] using compatible pins: numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort-gpu 1.18.0 / insightface 0.7.3"
+  echo "[PIP ] using compatible pins: numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort-gpu 1.19.2 / insightface 0.7.3"
 fi
 
 for row in "${entries[@]}"; do
