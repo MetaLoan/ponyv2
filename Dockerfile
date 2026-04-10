@@ -19,8 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
 # Pin to CUDA 12.8 wheels to match the current working RunPod baseline.
-RUN "$PYTHON_BIN" -m ensurepip --upgrade && \
-    "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
+RUN "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
     "$PYTHON_BIN" -m pip install \
       --index-url https://download.pytorch.org/whl/cu128 \
       "torch==2.10.0+cu128" \
