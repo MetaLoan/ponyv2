@@ -23,8 +23,11 @@ RUN "$PYTHON_BIN" -m pip install -U pip setuptools wheel && \
     "$PYTHON_BIN" -m pip install \
       --index-url https://download.pytorch.org/whl/cu128 \
       "torch==2.10.0+cu128" \
-      "torchvision==0.25.0+cu128" \
       "torchaudio==2.10.0+cu128"
+RUN "$PYTHON_BIN" -m pip install \
+      --index-url https://download.pytorch.org/whl/test/cu128 \
+      --no-deps \
+      "torchvision==0.25.0+cu128"
 
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
