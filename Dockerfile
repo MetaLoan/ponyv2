@@ -54,8 +54,9 @@ RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-bin
     "huggingface_hub" \
     "onnxruntime-gpu==1.18.0"
 RUN set -eux; \
-    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
-    python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+    python3 -m pip uninstall -y numpy scipy onnx onnxruntime onnxruntime-gpu insightface || true; \
+    python3 -m pip install --no-cache-dir --force-reinstall "numpy==1.26.4"; \
+    python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
       "scipy==1.11.4" \
       "onnx==1.18.0" \
       "onnxruntime-gpu==1.18.0" \

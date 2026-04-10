@@ -143,8 +143,9 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
     "timm==1.0.26" \
     "huggingface_hub" \
     "onnxruntime-gpu==1.18.0"
-  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"
-  python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
+  python3 -m pip uninstall -y numpy scipy onnx onnxruntime onnxruntime-gpu insightface || true
+  python3 -m pip install --no-cache-dir --force-reinstall "numpy==1.26.4"
+  python3 -m pip install --no-cache-dir --force-reinstall --no-deps \
     "scipy==1.11.4" \
     "onnx==1.18.0" \
     "onnxruntime-gpu==1.18.0" \
