@@ -25,6 +25,14 @@ RUN python3 -m pip install -U pip setuptools wheel && \
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
 RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
+# Required custom nodes for V16 workflow
+RUN mkdir -p /workspace/runpod-slim/ComfyUI/custom_nodes && \
+    git clone --depth 1 https://github.com/Fannovel16/comfyui_controlnet_aux.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux && \
+    git clone --depth 1 https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI && \
+    python3 -m pip install -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && \
+    python3 -m pip install -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
+    python3 -m pip install --no-cache-dir facexlib insightface onnxruntime-gpu ftfy timm
+
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
 RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
 
