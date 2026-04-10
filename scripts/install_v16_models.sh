@@ -139,9 +139,10 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"
   python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
     "scipy==1.11.4" \
+    "onnx==1.18.0" \
     "onnxruntime-gpu==1.18.0" \
     "insightface==0.7.3"
-  echo "[PIP ] using compatible pins: numpy 1.26.4 / scipy 1.11.4 / ort-gpu 1.18.0 / insightface 0.7.3"
+  echo "[PIP ] using compatible pins: numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort-gpu 1.18.0 / insightface 0.7.3"
 fi
 
 for row in "${entries[@]}"; do

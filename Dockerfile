@@ -54,9 +54,10 @@ RUN set -eux; \
     python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed "numpy==1.26.4"; \
     python3 -m pip install --no-cache-dir --force-reinstall --ignore-installed --no-deps \
       "scipy==1.11.4" \
+      "onnx==1.18.0" \
       "onnxruntime-gpu==1.18.0" \
       "insightface==0.7.3"; \
-    echo "[PIP] installed compatible runtime pins (numpy 1.26.4 / scipy 1.11.4 / ort 1.18.0 / insightface 0.7.3)"
+    echo "[PIP] installed compatible runtime pins (numpy 1.26.4 / scipy 1.11.4 / onnx 1.18.0 / ort 1.18.0 / insightface 0.7.3)"
 
 COPY requirements-serverless.txt /workspace/runpod-slim/requirements-serverless.txt
 RUN python3 -m pip install -r /workspace/runpod-slim/requirements-serverless.txt
