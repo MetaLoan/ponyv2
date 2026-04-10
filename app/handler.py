@@ -293,6 +293,33 @@ def collect_output_images(history_obj: Dict) -> Tuple[List[Dict], List[Dict]]:
     return final_images, intermediate
 
 
+def _summarize_history(history_obj: Dict) -> Dict:
+    outputs = history_obj.get("outputs", {}) if isinstance(history_obj, dict) else {}
+    output_nodes = sorted(outputs.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))
+    image_counts = {}
+    for nid, out in outputs.items():
+        imgs = out.get("images", []) if isinstance(out, dict) else []
+        if imgs:
+            image_counts[str(nid)] = len(imgs)
+
+    status = history_obj.get("status", {}) if isinstance(history_obj, dict) else {}
+    messages = status.get("messages", []) if isinstance(status, dict) else []
+    error_messages = []
+    for m in messages[-20:]:
+        if isinstance(m, (list, tuple)) and len(m) >= 2:
+            level = m[0]
+            payload = m[1]
+            if level == "execution_error":
+                error_messages.append(payload)
+
+    return {
+        "output_nodes": output_nodes,
+        "image_counts": image_counts,
+        "status_str": status.get("status_str") if isinstance(status, dict) else None,
+        "execution_errors": error_messages,
+    }
+
+
 def handler(event: Dict) -> Dict:
     _load_key_env_file()
     data = event.get("input", {}) if isinstance(event, dict) else {}
@@ -323,7 +350,12 @@ def handler(event: Dict) -> Dict:
     history_obj = wait_history(prompt_id)
     final_images, intermediate_images = collect_output_images(history_obj)
     if not final_images:
-        return {"ok": False, "error": "No final image produced by node 16", "prompt_id": prompt_id}
+        return {
+            "ok": False,
+            "error": "No final image produced by node 16",
+            "prompt_id": prompt_id,
+            "history_debug": _summarize_history(history_obj),
+        }
 
     final_raw = _read_output_image(final_images[0])
     final_ext = Path(final_images[0]["filename"]).suffix.lower() or ".png"
