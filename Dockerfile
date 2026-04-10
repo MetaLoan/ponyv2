@@ -59,10 +59,14 @@ COPY workflows/pulid_sdxl_workflow_v3_api.json /workspace/runpod-slim/ComfyUI/pu
 
 RUN chmod +x /workspace/runpod-slim/scripts/install_v16_models.sh
 
-# Always build as full-package image (models + custom nodes + runtime deps).
+# Optional full-package mode:
+# docker build --build-arg BUILD_FULL_PACKAGE=1 --build-arg CIVITAI_TOKEN=xxx ...
+ARG BUILD_FULL_PACKAGE=0
 ARG CIVITAI_TOKEN=
-RUN COMFY_ROOT=/workspace/runpod-slim/ComfyUI CIVITAI_TOKEN="$CIVITAI_TOKEN" \
-    /workspace/runpod-slim/scripts/install_v16_models.sh /workspace/runpod-slim/ComfyUI
+RUN if [ "$BUILD_FULL_PACKAGE" = "1" ]; then \
+      COMFY_ROOT=/workspace/runpod-slim/ComfyUI CIVITAI_TOKEN="$CIVITAI_TOKEN" \
+      /workspace/runpod-slim/scripts/install_v16_models.sh /workspace/runpod-slim/ComfyUI ; \
+    fi
 
 ENV WORKFLOW_API_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json \
     WORKFLOW_V3_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json \
