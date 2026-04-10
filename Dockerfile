@@ -1,25 +1,20 @@
 # syntax=docker/dockerfile:1.7
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DEFAULT_TIMEOUT=120 \
-    PYTHON_BIN=/usr/local/bin/python3 \
+    PYTHON_BIN=python3 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
     COMFY_API_URL=http://127.0.0.1:8188
 
 WORKDIR /workspace/runpod-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common gnupg ca-certificates curl && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    python3.12 python3.12-dev python3.12-venv python3.12-distutils \
+    python3 python3-dev python3-venv python3-pip \
     build-essential \
-    git libgl1 libglib2.0-0 && \
-    ln -sf /usr/bin/python3.12 /usr/local/bin/python3 && \
-    ln -sf /usr/bin/python3.12 /usr/local/bin/python && \
+    git curl ca-certificates libgl1 libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
@@ -95,4 +90,4 @@ ENV WORKFLOW_API_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.
     R2_PREFIX=outputs
 
 WORKDIR /workspace/runpod-slim/app
-CMD ["/usr/local/bin/python3", "runpod_entry.py"]
+CMD ["python3", "runpod_entry.py"]
