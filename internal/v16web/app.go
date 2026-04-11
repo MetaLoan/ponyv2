@@ -443,14 +443,32 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		nodes["10"]["inputs"].(map[string]interface{})["image"] = source
 		nodes["24"]["inputs"].(map[string]interface{})["image"] = source
 		nodes["27"]["inputs"].(map[string]interface{})["images"] = source
+		delete(nodes, "9")
 	} else if req.Mode == "pose_then_face_swap" || req.Mode == "pose_only" {
 		source := []interface{}{"9", 0}
 		nodes["10"]["inputs"].(map[string]interface{})["image"] = source
 		nodes["24"]["inputs"].(map[string]interface{})["image"] = source
 		nodes["27"]["inputs"].(map[string]interface{})["images"] = source
+		delete(nodes, "22")
+		delete(nodes, "23")
+		delete(nodes, "27")
 	} else if req.Mode == "text_only" {
 		nodes["14"]["inputs"].(map[string]interface{})["positive"] = []interface{}{"2", 0}
 		nodes["14"]["inputs"].(map[string]interface{})["negative"] = []interface{}{"3", 0}
+		delete(nodes, "4")
+		delete(nodes, "5")
+		delete(nodes, "6")
+		delete(nodes, "7")
+		delete(nodes, "8")
+		delete(nodes, "9")
+		delete(nodes, "10")
+		delete(nodes, "11")
+		delete(nodes, "12")
+		delete(nodes, "22")
+		delete(nodes, "23")
+		delete(nodes, "24")
+		delete(nodes, "25")
+		delete(nodes, "26")
 		delete(nodes, "27")
 		delete(nodes, "28")
 		delete(nodes, "29")
@@ -472,11 +490,17 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		nodes["3"]["inputs"].(map[string]interface{})["text"] = req.NegativePrompt
 	}
 
-	overrideSampler(nodes["22"]["inputs"].(map[string]interface{}), req.BaseSeed, req.BaseSteps, req.BaseCFG, req.BaseSamplerName, req.BaseScheduler, req.BaseDenoise)
+	if node22, ok := nodes["22"]; ok {
+		overrideSampler(node22["inputs"].(map[string]interface{}), req.BaseSeed, req.BaseSteps, req.BaseCFG, req.BaseSamplerName, req.BaseScheduler, req.BaseDenoise)
+	}
 	overrideSampler(nodes["14"]["inputs"].(map[string]interface{}), req.Seed, req.Steps, req.CFG, req.SamplerName, req.Scheduler, req.Denoise)
 
-	overrideControlNet(nodes["12"]["inputs"].(map[string]interface{}), req.CNDepthStrength, req.CNDepthStartPercent, req.CNDepthEndPercent)
-	overrideControlNet(nodes["26"]["inputs"].(map[string]interface{}), req.CNPoseStrength, req.CNPoseStartPercent, req.CNPoseEndPercent)
+	if node12, ok := nodes["12"]; ok {
+		overrideControlNet(node12["inputs"].(map[string]interface{}), req.CNDepthStrength, req.CNDepthStartPercent, req.CNDepthEndPercent)
+	}
+	if node26, ok := nodes["26"]; ok {
+		overrideControlNet(node26["inputs"].(map[string]interface{}), req.CNPoseStrength, req.CNPoseStartPercent, req.CNPoseEndPercent)
+	}
 
 	if req.EnablePulid != nil && *req.EnablePulid {
 		nodes["8"]["inputs"].(map[string]interface{})["model"] = modelSourceModel
@@ -495,8 +519,18 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		nodes["14"]["inputs"].(map[string]interface{})["model"] = []interface{}{"8", 0}
 	} else {
 		nodes["14"]["inputs"].(map[string]interface{})["model"] = modelSourceModel
+		delete(nodes, "4")
+		delete(nodes, "5")
+		delete(nodes, "6")
+		delete(nodes, "7")
+		delete(nodes, "8")
 	}
-	nodes["22"]["inputs"].(map[string]interface{})["model"] = modelSourceModel
+	if node22, ok := nodes["22"]; ok {
+		node22["inputs"].(map[string]interface{})["model"] = modelSourceModel
+	}
+	if !(req.EnableLora != nil && *req.EnableLora && len(req.Loras) > 0) {
+		delete(nodes, "17")
+	}
 
 	if req.EnableUpscale != nil && *req.EnableUpscale {
 		if req.UpscaleModelName != "" {
@@ -505,6 +539,13 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		nodes["16"]["inputs"].(map[string]interface{})["images"] = []interface{}{"19", 0}
 	} else {
 		nodes["16"]["inputs"].(map[string]interface{})["images"] = []interface{}{"15", 0}
+		delete(nodes, "18")
+		delete(nodes, "19")
+	}
+	if req.KeepIntermediate != nil && !*req.KeepIntermediate {
+		delete(nodes, "27")
+		delete(nodes, "28")
+		delete(nodes, "29")
 	}
 
 	return workflow, warnings, nil

@@ -231,21 +231,26 @@ def apply_lora_chain(prompt: Dict, loras: List[Dict]) -> Tuple[List, List]:
     return model_source, clip_source
 
 
+def prune_nodes(prompt: Dict, node_ids: Tuple[str, ...]) -> None:
+    for node_id in node_ids:
+        prompt.pop(node_id, None)
+
+
 def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     mode = input_data["mode"]
     enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only"}))
     uses_external_pose = False
     if mode == "dual_pass_auto_pose":
         set_pose_branch(prompt, False)
+        prune_nodes(prompt, ("9",))
     elif mode in {"pose_then_face_swap", "pose_only"}:
         set_pose_branch(prompt, True)
         uses_external_pose = True
+        prune_nodes(prompt, ("22", "23", "27"))
     elif mode == "text_only":
-        set_pose_branch(prompt, False)
         prompt["14"]["inputs"]["positive"] = ["2", 0]
         prompt["14"]["inputs"]["negative"] = ["3", 0]
-        for node_id in ("27", "28", "29"):
-            prompt.pop(node_id, None)
+        prune_nodes(prompt, ("4", "5", "6", "7", "8", "9", "10", "11", "12", "22", "23", "24", "25", "26", "27", "28", "29"))
     return uses_external_pose, enable_pulid
 
 
@@ -322,15 +327,25 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
 
     prompt["2"]["inputs"]["clip"] = clip_source
     prompt["3"]["inputs"]["clip"] = clip_source
-    prompt["22"]["inputs"]["model"] = model_source
-    prompt["8"]["inputs"]["model"] = model_source
+    if "22" in prompt:
+        prompt["22"]["inputs"]["model"] = model_source
+    if "8" in prompt:
+        prompt["8"]["inputs"]["model"] = model_source
     enable_pulid = bool(input_data.get("enable_pulid", True))
     prompt["14"]["inputs"]["model"] = ["8", 0] if enable_pulid else model_source
+    if not enable_lora:
+        prune_nodes(prompt, ("17",))
+    if not enable_pulid:
+        prune_nodes(prompt, ("4", "5", "6", "7", "8"))
 
     use_upscale = bool(input_data.get("enable_upscale", input_data.get("use_upscale", False)))
     if "upscale_model_name" in input_data:
         prompt["18"]["inputs"]["model_name"] = input_data["upscale_model_name"]
     prompt["16"]["inputs"]["images"] = ["19", 0] if use_upscale else ["15", 0]
+    if not use_upscale:
+        prune_nodes(prompt, ("18", "19"))
+    if not input_data.get("keep_intermediate", KEEP_INTERMEDIATE_DEFAULT):
+        prune_nodes(prompt, ("27", "28", "29"))
 
     return use_upscale, enable_pulid
 
