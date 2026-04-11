@@ -234,15 +234,17 @@ def apply_lora_chain(prompt: Dict, loras: List[Dict]) -> Tuple[List, List]:
 def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     mode = input_data["mode"]
     enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only"}))
+    uses_external_pose = False
     if mode == "dual_pass_auto_pose":
         set_pose_branch(prompt, False)
     elif mode in {"pose_then_face_swap", "pose_only"}:
         set_pose_branch(prompt, True)
+        uses_external_pose = True
     elif mode == "text_only":
         set_pose_branch(prompt, False)
         prompt["14"]["inputs"]["positive"] = ["2", 0]
         prompt["14"]["inputs"]["negative"] = ["3", 0]
-    return mode != "dual_pass_auto_pose", enable_pulid
+    return uses_external_pose, enable_pulid
 
 
 def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
@@ -545,7 +547,7 @@ def handler(event: Dict) -> Dict:
         "intermediate_urls": intermediate_urls,
         "meta": {
             "mode": data["mode"],
-            "pose_mode": "external_pose" if has_pose else "dual_pass_auto_pose",
+            "pose_mode": "external_pose" if has_pose else ("text_only" if data["mode"] == "text_only" else "dual_pass_auto_pose"),
             "enable_pulid": enable_pulid,
             "enable_lora": bool(data.get("enable_lora")),
             "use_upscale": use_upscale,
