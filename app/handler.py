@@ -269,18 +269,19 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     if "ckpt_name" in input_data:
         prompt["1"]["inputs"]["ckpt_name"] = input_data["ckpt_name"]
 
-    if "base_steps" in input_data:
-        prompt["22"]["inputs"]["steps"] = int(input_data["base_steps"])
-    if "base_seed" in input_data:
-        prompt["22"]["inputs"]["seed"] = int(input_data["base_seed"])
-    if "base_cfg" in input_data:
-        prompt["22"]["inputs"]["cfg"] = float(input_data["base_cfg"])
-    if "base_sampler_name" in input_data:
-        prompt["22"]["inputs"]["sampler_name"] = input_data["base_sampler_name"]
-    if "base_scheduler" in input_data:
-        prompt["22"]["inputs"]["scheduler"] = input_data["base_scheduler"]
-    if "base_denoise" in input_data:
-        prompt["22"]["inputs"]["denoise"] = float(input_data["base_denoise"])
+    if "22" in prompt:
+        if "base_steps" in input_data:
+            prompt["22"]["inputs"]["steps"] = int(input_data["base_steps"])
+        if "base_seed" in input_data:
+            prompt["22"]["inputs"]["seed"] = int(input_data["base_seed"])
+        if "base_cfg" in input_data:
+            prompt["22"]["inputs"]["cfg"] = float(input_data["base_cfg"])
+        if "base_sampler_name" in input_data:
+            prompt["22"]["inputs"]["sampler_name"] = input_data["base_sampler_name"]
+        if "base_scheduler" in input_data:
+            prompt["22"]["inputs"]["scheduler"] = input_data["base_scheduler"]
+        if "base_denoise" in input_data:
+            prompt["22"]["inputs"]["denoise"] = float(input_data["base_denoise"])
 
     if "steps" in input_data:
         prompt["14"]["inputs"]["steps"] = int(input_data["steps"])
@@ -295,27 +296,30 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     if "denoise" in input_data:
         prompt["14"]["inputs"]["denoise"] = float(input_data["denoise"])
 
-    if "cn_depth_strength" in input_data:
-        prompt["12"]["inputs"]["strength"] = float(input_data["cn_depth_strength"])
-    if "cn_depth_start_percent" in input_data:
-        prompt["12"]["inputs"]["start_percent"] = float(input_data["cn_depth_start_percent"])
-    if "cn_depth_end_percent" in input_data:
-        prompt["12"]["inputs"]["end_percent"] = float(input_data["cn_depth_end_percent"])
-    if "cn_pose_strength" in input_data:
-        prompt["26"]["inputs"]["strength"] = float(input_data["cn_pose_strength"])
-    if "cn_pose_start_percent" in input_data:
-        prompt["26"]["inputs"]["start_percent"] = float(input_data["cn_pose_start_percent"])
-    if "cn_pose_end_percent" in input_data:
-        prompt["26"]["inputs"]["end_percent"] = float(input_data["cn_pose_end_percent"])
+    if "12" in prompt:
+        if "cn_depth_strength" in input_data:
+            prompt["12"]["inputs"]["strength"] = float(input_data["cn_depth_strength"])
+        if "cn_depth_start_percent" in input_data:
+            prompt["12"]["inputs"]["start_percent"] = float(input_data["cn_depth_start_percent"])
+        if "cn_depth_end_percent" in input_data:
+            prompt["12"]["inputs"]["end_percent"] = float(input_data["cn_depth_end_percent"])
+    if "26" in prompt:
+        if "cn_pose_strength" in input_data:
+            prompt["26"]["inputs"]["strength"] = float(input_data["cn_pose_strength"])
+        if "cn_pose_start_percent" in input_data:
+            prompt["26"]["inputs"]["start_percent"] = float(input_data["cn_pose_start_percent"])
+        if "cn_pose_end_percent" in input_data:
+            prompt["26"]["inputs"]["end_percent"] = float(input_data["cn_pose_end_percent"])
 
-    if "pulid_weight" in input_data:
-        prompt["8"]["inputs"]["weight"] = float(input_data["pulid_weight"])
-    if "pulid_start_at" in input_data:
-        prompt["8"]["inputs"]["start_at"] = float(input_data["pulid_start_at"])
-    if "pulid_end_at" in input_data:
-        prompt["8"]["inputs"]["end_at"] = float(input_data["pulid_end_at"])
-    if "pulid_method" in input_data:
-        prompt["8"]["inputs"]["method"] = input_data["pulid_method"]
+    if "8" in prompt:
+        if "pulid_weight" in input_data:
+            prompt["8"]["inputs"]["weight"] = float(input_data["pulid_weight"])
+        if "pulid_start_at" in input_data:
+            prompt["8"]["inputs"]["start_at"] = float(input_data["pulid_start_at"])
+        if "pulid_end_at" in input_data:
+            prompt["8"]["inputs"]["end_at"] = float(input_data["pulid_end_at"])
+        if "pulid_method" in input_data:
+            prompt["8"]["inputs"]["method"] = input_data["pulid_method"]
 
     enable_lora = bool(input_data.get("enable_lora"))
     model_source = ["1", 0]
