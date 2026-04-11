@@ -103,3 +103,29 @@ Notes:
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.
 - Set `INSTALL_CUSTOM_NODES=0` to skip custom node installation.
 - Restart ComfyUI after install so newly added nodes are registered.
+
+## Fly.io web tester
+
+This repo now includes a Fly-specific deployment for the React + Go tester:
+
+- `Dockerfile.fly`
+- `fly.toml`
+- `DEPLOY_FLY.md`
+
+Build:
+
+```bash
+fly deploy -c fly.toml
+```
+
+Required runtime env for generation:
+- `RUNPOD_API_KEY`
+- `RUNPOD_ENDPOINT_ID`
+
+Required runtime env for the S3 model catalog:
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `S3_BUCKET`
+- `S3_ENDPOINT_URL`
+
+The Fly app serves the React UI and the Go API from one container.
