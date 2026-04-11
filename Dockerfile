@@ -71,6 +71,7 @@ COPY config/v16_models.yaml /workspace/runpod-slim/config/v16_models.yaml
 COPY scripts/install_v16_models.sh /workspace/runpod-slim/scripts/install_v16_models.sh
 COPY workflows/pulid_sdxl_workflow_v3.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json
 COPY workflows/pulid_sdxl_workflow_v3_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json
+COPY workflows/pulid_sdxl_workflow_web_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_web_api.json
 
 RUN chmod +x /workspace/runpod-slim/scripts/install_v16_models.sh
 
@@ -83,7 +84,7 @@ RUN if [ "$BUILD_FULL_PACKAGE" = "1" ]; then \
       /workspace/runpod-slim/scripts/install_v16_models.sh /workspace/runpod-slim/ComfyUI ; \
     fi
 
-ENV WORKFLOW_API_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json \
+ENV WORKFLOW_API_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_web_api.json \
     WORKFLOW_V3_PATH=/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json \
     KEEP_INTERMEDIATE_DEFAULT=1 \
     R2_PREFIX=outputs

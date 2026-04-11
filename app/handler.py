@@ -16,7 +16,7 @@ COMFY_API_URL = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
 COMFY_ROOT = Path(os.getenv("COMFY_ROOT", "/workspace/runpod-slim/ComfyUI"))
 COMFY_INPUT_DIR = Path(os.getenv("COMFY_INPUT_DIR", str(COMFY_ROOT / "input")))
 COMFY_OUTPUT_DIR = Path(os.getenv("COMFY_OUTPUT_DIR", str(COMFY_ROOT / "output")))
-WORKFLOW_API_PATH = Path(os.getenv("WORKFLOW_API_PATH", "/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json"))
+WORKFLOW_API_PATH = Path(os.getenv("WORKFLOW_API_PATH", "/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_web_api.json"))
 WORKFLOW_V3_PATH = Path(os.getenv("WORKFLOW_V3_PATH", "/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json"))
 KEEP_INTERMEDIATE_DEFAULT = os.getenv("KEEP_INTERMEDIATE_DEFAULT", "1") == "1"
 KEY_ENV_FILE = os.getenv("KEY_ENV_FILE", "")
@@ -132,7 +132,120 @@ def set_pose_branch(prompt: Dict, has_pose: bool) -> None:
     prompt["27"]["inputs"]["images"] = source
 
 
-def apply_overrides(prompt: Dict, input_data: Dict) -> bool:
+def infer_mode(input_data: Dict) -> str:
+    mode = str(input_data.get("mode", "")).strip()
+    if mode:
+        return mode
+    if not input_data.get("reference_image") and not input_data.get("pose_image"):
+        return "text_only"
+    return "pose_then_face_swap" if input_data.get("pose_image") else "dual_pass_auto_pose"
+
+
+def normalize_input(input_data: Dict) -> Dict:
+    data = dict(input_data)
+    data["mode"] = infer_mode(data)
+    data.setdefault("width", 832)
+    data.setdefault("height", 1216)
+    data.setdefault("batch_size", 1)
+    data.setdefault("base_steps", 8)
+    data.setdefault("steps", 40)
+    data.setdefault("cfg", 4)
+    data.setdefault("base_cfg", 4)
+    data.setdefault("base_denoise", 1)
+    data.setdefault("denoise", 1)
+    data.setdefault("base_sampler_name", "dpmpp_2m_sde")
+    data.setdefault("base_scheduler", "karras")
+    data.setdefault("sampler_name", "dpmpp_2m_sde")
+    data.setdefault("scheduler", "karras")
+    data.setdefault("pulid_method", "fidelity")
+    data.setdefault("pulid_weight", 0.7)
+    data.setdefault("pulid_start_at", 0.5)
+    data.setdefault("pulid_end_at", 1.0)
+    data.setdefault("cn_depth_strength", 0.6)
+    data.setdefault("cn_depth_start_percent", 0.0)
+    data.setdefault("cn_depth_end_percent", 1.0)
+    data.setdefault("cn_pose_strength", 0.6)
+    data.setdefault("cn_pose_start_percent", 0.0)
+    data.setdefault("cn_pose_end_percent", 1.0)
+    data.setdefault("jpg_quality", 85)
+    if "enable_upscale" not in data and "use_upscale" in data:
+        data["enable_upscale"] = bool(data.get("use_upscale"))
+    data.setdefault("enable_upscale", False)
+    if "enable_pulid" not in data:
+        data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only"}
+    if "enable_lora" not in data:
+        data["enable_lora"] = bool(data.get("loras"))
+    return data
+
+
+def validate_input(input_data: Dict) -> None:
+    mode = input_data["mode"]
+    if mode == "dual_pass_auto_pose":
+        if "reference_image" not in input_data:
+            raise RuntimeError("reference_image is required for dual_pass_auto_pose")
+    elif mode == "pose_then_face_swap":
+        if "reference_image" not in input_data:
+            raise RuntimeError("reference_image is required for pose_then_face_swap")
+        if "pose_image" not in input_data:
+            raise RuntimeError("pose_image is required for pose_then_face_swap")
+    elif mode == "pose_only":
+        if "pose_image" not in input_data:
+            raise RuntimeError("pose_image is required for pose_only")
+    elif mode == "text_only":
+        pass
+    else:
+        raise RuntimeError(f"Unsupported mode: {mode}")
+    if not str(input_data.get("prompt", "")).strip():
+        raise RuntimeError("prompt is required")
+
+
+def _max_node_id(prompt: Dict) -> int:
+    ids = [int(k) for k in prompt.keys() if str(k).isdigit()]
+    return max(ids) if ids else 0
+
+
+def apply_lora_chain(prompt: Dict, loras: List[Dict]) -> Tuple[List, List]:
+    model_source = ["1", 0]
+    clip_source = ["1", 1]
+    if not loras:
+        return model_source, clip_source
+
+    max_id = _max_node_id(prompt)
+    for idx, lora in enumerate(loras):
+        node_id = "17" if idx == 0 else str(max_id + idx)
+        if idx > 0:
+            prompt[node_id] = {
+                "inputs": {},
+                "class_type": "LoraLoader",
+                "_meta": {"title": f"Load LoRA {idx + 1}"},
+            }
+        strength_model = lora.get("strength_model", lora.get("strength", 0.0))
+        strength_clip = lora.get("strength_clip", lora.get("strength", 0.0))
+        prompt[node_id]["inputs"]["lora_name"] = lora["name"]
+        prompt[node_id]["inputs"]["strength_model"] = float(strength_model)
+        prompt[node_id]["inputs"]["strength_clip"] = float(strength_clip)
+        prompt[node_id]["inputs"]["model"] = model_source
+        prompt[node_id]["inputs"]["clip"] = clip_source
+        model_source = [node_id, 0]
+        clip_source = [node_id, 1]
+    return model_source, clip_source
+
+
+def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
+    mode = input_data["mode"]
+    enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only"}))
+    if mode == "dual_pass_auto_pose":
+        set_pose_branch(prompt, False)
+    elif mode in {"pose_then_face_swap", "pose_only"}:
+        set_pose_branch(prompt, True)
+    elif mode == "text_only":
+        set_pose_branch(prompt, False)
+        prompt["14"]["inputs"]["positive"] = ["2", 0]
+        prompt["14"]["inputs"]["negative"] = ["3", 0]
+    return mode != "dual_pass_auto_pose", enable_pulid
+
+
+def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     if "prompt" in input_data:
         prompt["2"]["inputs"]["text"] = input_data["prompt"]
     if "negative_prompt" in input_data:
@@ -142,15 +255,23 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> bool:
         prompt["13"]["inputs"]["width"] = int(input_data["width"])
     if "height" in input_data:
         prompt["13"]["inputs"]["height"] = int(input_data["height"])
+    if "batch_size" in input_data:
+        prompt["13"]["inputs"]["batch_size"] = int(input_data["batch_size"])
+    if "ckpt_name" in input_data:
+        prompt["1"]["inputs"]["ckpt_name"] = input_data["ckpt_name"]
 
     if "base_steps" in input_data:
         prompt["22"]["inputs"]["steps"] = int(input_data["base_steps"])
     if "base_seed" in input_data:
         prompt["22"]["inputs"]["seed"] = int(input_data["base_seed"])
+    if "base_cfg" in input_data:
+        prompt["22"]["inputs"]["cfg"] = float(input_data["base_cfg"])
     if "base_sampler_name" in input_data:
         prompt["22"]["inputs"]["sampler_name"] = input_data["base_sampler_name"]
     if "base_scheduler" in input_data:
         prompt["22"]["inputs"]["scheduler"] = input_data["base_scheduler"]
+    if "base_denoise" in input_data:
+        prompt["22"]["inputs"]["denoise"] = float(input_data["base_denoise"])
 
     if "steps" in input_data:
         prompt["14"]["inputs"]["steps"] = int(input_data["steps"])
@@ -162,30 +283,52 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> bool:
         prompt["14"]["inputs"]["sampler_name"] = input_data["sampler_name"]
     if "scheduler" in input_data:
         prompt["14"]["inputs"]["scheduler"] = input_data["scheduler"]
+    if "denoise" in input_data:
+        prompt["14"]["inputs"]["denoise"] = float(input_data["denoise"])
 
     if "cn_depth_strength" in input_data:
         prompt["12"]["inputs"]["strength"] = float(input_data["cn_depth_strength"])
+    if "cn_depth_start_percent" in input_data:
+        prompt["12"]["inputs"]["start_percent"] = float(input_data["cn_depth_start_percent"])
+    if "cn_depth_end_percent" in input_data:
+        prompt["12"]["inputs"]["end_percent"] = float(input_data["cn_depth_end_percent"])
     if "cn_pose_strength" in input_data:
         prompt["26"]["inputs"]["strength"] = float(input_data["cn_pose_strength"])
+    if "cn_pose_start_percent" in input_data:
+        prompt["26"]["inputs"]["start_percent"] = float(input_data["cn_pose_start_percent"])
+    if "cn_pose_end_percent" in input_data:
+        prompt["26"]["inputs"]["end_percent"] = float(input_data["cn_pose_end_percent"])
 
     if "pulid_weight" in input_data:
         prompt["8"]["inputs"]["weight"] = float(input_data["pulid_weight"])
+    if "pulid_start_at" in input_data:
+        prompt["8"]["inputs"]["start_at"] = float(input_data["pulid_start_at"])
     if "pulid_end_at" in input_data:
         prompt["8"]["inputs"]["end_at"] = float(input_data["pulid_end_at"])
     if "pulid_method" in input_data:
         prompt["8"]["inputs"]["method"] = input_data["pulid_method"]
 
+    enable_lora = bool(input_data.get("enable_lora"))
+    model_source = ["1", 0]
+    clip_source = ["1", 1]
     loras = input_data.get("loras")
-    if isinstance(loras, list) and loras:
-        first = loras[0]
-        if "name" in first:
-            prompt["17"]["inputs"]["lora_name"] = first["name"]
-        if "strength" in first:
-            s = float(first["strength"])
-            prompt["17"]["inputs"]["strength_model"] = s
-            prompt["17"]["inputs"]["strength_clip"] = s
+    if enable_lora and isinstance(loras, list) and loras:
+        valid_loras = [x for x in loras if isinstance(x, dict) and x.get("name")]
+        model_source, clip_source = apply_lora_chain(prompt, valid_loras)
 
-    return bool(input_data.get("use_upscale", False))
+    prompt["2"]["inputs"]["clip"] = clip_source
+    prompt["3"]["inputs"]["clip"] = clip_source
+    prompt["22"]["inputs"]["model"] = model_source
+    prompt["8"]["inputs"]["model"] = model_source
+    enable_pulid = bool(input_data.get("enable_pulid", True))
+    prompt["14"]["inputs"]["model"] = ["8", 0] if enable_pulid else model_source
+
+    use_upscale = bool(input_data.get("enable_upscale", input_data.get("use_upscale", False)))
+    if "upscale_model_name" in input_data:
+        prompt["18"]["inputs"]["model_name"] = input_data["upscale_model_name"]
+    prompt["16"]["inputs"]["images"] = ["19", 0] if use_upscale else ["15", 0]
+
+    return use_upscale, enable_pulid
 
 
 def queue_prompt(prompt: Dict) -> str:
@@ -327,28 +470,27 @@ def _summarize_history(history_obj: Dict) -> Dict:
 
 def handler(event: Dict) -> Dict:
     _load_key_env_file()
-    data = event.get("input", {}) if isinstance(event, dict) else {}
+    data = normalize_input(event.get("input", {}) if isinstance(event, dict) else {})
     request_id = data.get("request_id") or uuid.uuid4().hex
-
-    if "reference_image" not in data:
-        return {"ok": False, "error": "reference_image is required"}
+    validate_input(data)
 
     prompt = load_json(WORKFLOW_API_PATH)
     v3 = load_json(WORKFLOW_V3_PATH)
     apply_v3_defaults(prompt, v3)
 
-    ref_filename = resolve_media_to_comfy_filename(data["reference_image"], "reference")
-    prompt["7"]["inputs"]["image"] = ref_filename
+    ref_value = data.get("reference_image")
+    if ref_value:
+        ref_filename = resolve_media_to_comfy_filename(ref_value, "reference")
+        prompt["7"]["inputs"]["image"] = ref_filename
 
-    pose_value = data.get("pose_image")
-    has_pose = bool(pose_value)
+    has_pose, enable_pulid = apply_mode(prompt, data)
     if has_pose:
-        pose_filename = resolve_media_to_comfy_filename(pose_value, "pose")
+        pose_filename = resolve_media_to_comfy_filename(data["pose_image"], "pose")
         prompt["9"]["inputs"]["image"] = pose_filename
-    set_pose_branch(prompt, has_pose)
 
-    use_upscale = apply_overrides(prompt, data)
+    use_upscale, enable_pulid = apply_overrides(prompt, data)
     keep_intermediate = bool(data.get("keep_intermediate", KEEP_INTERMEDIATE_DEFAULT))
+    jpg_quality = int(data.get("jpg_quality", 85))
 
     validate_required_node_types(prompt)
     prompt_id = queue_prompt(prompt)
@@ -367,7 +509,7 @@ def handler(event: Dict) -> Dict:
     final_content_type = "image/png" if final_ext == ".png" else "image/jpeg"
 
     if use_upscale:
-        final_raw = _convert_to_jpg_bytes(final_raw, quality=85)
+        final_raw = _convert_to_jpg_bytes(final_raw, quality=jpg_quality)
         final_ext = ".jpg"
         final_content_type = "image/jpeg"
 
@@ -402,9 +544,12 @@ def handler(event: Dict) -> Dict:
         "final_url": final_url,
         "intermediate_urls": intermediate_urls,
         "meta": {
+            "mode": data["mode"],
             "pose_mode": "external_pose" if has_pose else "dual_pass_auto_pose",
+            "enable_pulid": enable_pulid,
+            "enable_lora": bool(data.get("enable_lora")),
             "use_upscale": use_upscale,
             "final_format": "jpg" if use_upscale else final_ext.lstrip("."),
-            "jpg_quality": 85 if use_upscale else None,
+            "jpg_quality": jpg_quality if use_upscale else None,
         },
     }
