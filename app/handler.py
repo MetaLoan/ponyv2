@@ -244,6 +244,8 @@ def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
         set_pose_branch(prompt, False)
         prompt["14"]["inputs"]["positive"] = ["2", 0]
         prompt["14"]["inputs"]["negative"] = ["3", 0]
+        for node_id in ("27", "28", "29"):
+            prompt.pop(node_id, None)
     return uses_external_pose, enable_pulid
 
 

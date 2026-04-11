@@ -451,6 +451,9 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 	} else if req.Mode == "text_only" {
 		nodes["14"]["inputs"].(map[string]interface{})["positive"] = []interface{}{"2", 0}
 		nodes["14"]["inputs"].(map[string]interface{})["negative"] = []interface{}{"3", 0}
+		delete(nodes, "27")
+		delete(nodes, "28")
+		delete(nodes, "29")
 	}
 
 	if req.Width > 0 {
