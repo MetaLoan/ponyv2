@@ -57,6 +57,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/ponyv2:${{ steps.meta.outputs.tag }}
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/ponyv2:latest
@@ -68,6 +70,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             docker.io/${{ env.DOCKERHUB_USERNAME }}/ponyv2:${{ steps.meta.outputs.tag }}
             docker.io/${{ env.DOCKERHUB_USERNAME }}/ponyv2:latest

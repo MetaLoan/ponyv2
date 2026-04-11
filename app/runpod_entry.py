@@ -14,6 +14,7 @@ from handler import handler
 COMFY_LOG_PATH = Path("/tmp/comfy.log")
 COMFY_ROOT = Path(os.getenv("COMFY_ROOT", "/workspace/runpod-slim/ComfyUI"))
 RUNPOD_VOLUME_ROOT = Path(os.getenv("RUNPOD_VOLUME_ROOT", "/runpod-volume"))
+IMAGE_REVISION_PATH = Path("/workspace/runpod-slim/.image_revision")
 
 
 def _replace_with_symlink(link_path: Path, source_path: Path) -> None:
@@ -114,7 +115,18 @@ def start_comfy_if_needed() -> None:
     print("[entry] ComfyUI healthy")
 
 
+def print_image_revision() -> None:
+    revision = os.getenv("IMAGE_REVISION", "").strip()
+    if not revision and IMAGE_REVISION_PATH.exists():
+        revision = IMAGE_REVISION_PATH.read_text(encoding="utf-8", errors="ignore").strip()
+    if revision:
+        print(f"[entry] Image revision: {revision}")
+    else:
+        print("[entry] Image revision: <unknown>")
+
+
 if __name__ == "__main__":
+    print_image_revision()
     try:
         map_runpod_volume_if_present()
     except Exception:

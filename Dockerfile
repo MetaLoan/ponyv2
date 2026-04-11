@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
+ARG GIT_SHA=unknown
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -9,6 +11,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFY_API_URL=http://127.0.0.1:8188
 
 WORKDIR /workspace/runpod-slim
+
+LABEL org.opencontainers.image.revision=$GIT_SHA
+
+RUN printf '%s\n' "$GIT_SHA" >/workspace/runpod-slim/.image_revision
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
