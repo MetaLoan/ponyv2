@@ -615,24 +615,26 @@ function MediaCard({
 }
 
 function ResultGallery({ result }: { result: GenerateResult }) {
-  const finalURL = typeof result.final_url === "string" ? result.final_url : "";
+  const finalURLs = Array.isArray(result.final_urls)
+    ? result.final_urls.filter((item): item is string => typeof item === "string")
+    : (typeof result.final_url === "string" && result.final_url ? [result.final_url] : []);
   const intermediates = Array.isArray(result.intermediate_urls) ? result.intermediate_urls.filter((item): item is string => typeof item === "string") : [];
 
   return (
     <div className="gallery">
-      {finalURL && (
-        <div className="imageCard">
+      {finalURLs.map((url, idx) => (
+        <div key={url} className="imageCard">
           <div className="imageCardHeader">
-            <span>Final</span>
-            <button type="button" className="ghost small" onClick={() => void copyText(finalURL)}>
+            <span>{finalURLs.length > 1 ? `Final ${idx + 1}` : "Final"}</span>
+            <button type="button" className="ghost small" onClick={() => void copyText(url)}>
               Copy URL
             </button>
           </div>
-          <a href={finalURL} target="_blank" rel="noreferrer">
-            <img src={finalURL} alt="final result" />
+          <a href={url} target="_blank" rel="noreferrer">
+            <img src={url} alt={`final result ${idx + 1}`} />
           </a>
         </div>
-      )}
+      ))}
       {intermediates.map((url) => (
         <div key={url} className="imageCard">
           <div className="imageCardHeader">

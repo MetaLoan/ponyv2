@@ -523,15 +523,6 @@ def handler(event: Dict) -> Dict:
             "history_debug": _summarize_history(history_obj),
         }
 
-    final_raw = _read_output_image(final_images[0])
-    final_ext = Path(final_images[0]["filename"]).suffix.lower() or ".png"
-    final_content_type = "image/png" if final_ext == ".png" else "image/jpeg"
-
-    if use_upscale:
-        final_raw = _convert_to_jpg_bytes(final_raw, quality=jpg_quality)
-        final_ext = ".jpg"
-        final_content_type = "image/jpeg"
-
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
         return {
@@ -540,11 +531,22 @@ def handler(event: Dict) -> Dict:
             "request_id": request_id,
             "warning": "R2 env vars missing; returning local filenames only",
             "final_local_file": final_images[0]["filename"],
+            "final_local_files": [x["filename"] for x in final_images],
             "intermediate_local_files": [x["filename"] for x in intermediate_images],
         }
 
-    final_key = f"{s3_cfg['prefix']}/{request_id}/final{final_ext}"
-    final_url = upload_bytes_to_r2(s3, s3_cfg, final_key, final_raw, final_content_type)
+    final_urls: List[str] = []
+    for idx, img_desc in enumerate(final_images, start=1):
+        final_raw = _read_output_image(img_desc)
+        final_ext = Path(img_desc["filename"]).suffix.lower() or ".png"
+        final_content_type = "image/png" if final_ext == ".png" else "image/jpeg"
+        if use_upscale:
+            final_raw = _convert_to_jpg_bytes(final_raw, quality=jpg_quality)
+            final_ext = ".jpg"
+            final_content_type = "image/jpeg"
+        key = f"{s3_cfg['prefix']}/{request_id}/final_{idx:02d}{final_ext}"
+        final_urls.append(upload_bytes_to_r2(s3, s3_cfg, key, final_raw, final_content_type))
+    final_url = final_urls[0]
 
     intermediate_urls: List[str] = []
     if keep_intermediate:
@@ -561,6 +563,7 @@ def handler(event: Dict) -> Dict:
         "request_id": request_id,
         "storage": {"provider": "r2", "bucket": s3_cfg["bucket"]},
         "final_url": final_url,
+        "final_urls": final_urls,
         "intermediate_urls": intermediate_urls,
         "meta": {
             "mode": data["mode"],

@@ -120,6 +120,7 @@ type GenerateResponse struct {
 	Status           string                 `json:"status,omitempty"`
 	RequestID        string                 `json:"request_id,omitempty"`
 	FinalURL         string                 `json:"final_url,omitempty"`
+	FinalURLs        []string               `json:"final_urls,omitempty"`
 	IntermediateURLs []string               `json:"intermediate_urls,omitempty"`
 	Meta             map[string]interface{} `json:"meta,omitempty"`
 	Raw              map[string]interface{} `json:"raw,omitempty"`
@@ -749,6 +750,11 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 				out.RequestID = toString(output["request_id"])
 				out.PromptID = toString(output["prompt_id"])
 				out.FinalURL = toString(output["final_url"])
+				if urls, ok := output["final_urls"].([]interface{}); ok {
+					for _, u := range urls {
+						out.FinalURLs = append(out.FinalURLs, toString(u))
+					}
+				}
 				if urls, ok := output["intermediate_urls"].([]interface{}); ok {
 					for _, u := range urls {
 						out.IntermediateURLs = append(out.IntermediateURLs, toString(u))
