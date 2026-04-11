@@ -615,10 +615,16 @@ function MediaCard({
 }
 
 function ResultGallery({ result }: { result: GenerateResult }) {
-  const finalURLs = Array.isArray(result.final_urls)
-    ? result.final_urls.filter((item): item is string => typeof item === "string")
-    : (typeof result.final_url === "string" && result.final_url ? [result.final_url] : []);
-  const intermediates = Array.isArray(result.intermediate_urls) ? result.intermediate_urls.filter((item): item is string => typeof item === "string") : [];
+  const finalURLs =
+    extractStringArray(result, ["final_urls"]) ??
+    extractStringArray(result, ["meta", "output", "final_urls"]) ??
+    extractSingleStringArray(result, ["final_url"]) ??
+    extractSingleStringArray(result, ["meta", "output", "final_url"]) ??
+    [];
+  const intermediates =
+    extractStringArray(result, ["intermediate_urls"]) ??
+    extractStringArray(result, ["meta", "output", "intermediate_urls"]) ??
+    [];
 
   return (
     <div className="gallery">
@@ -700,6 +706,36 @@ async function resolveMedia(media: MediaState): Promise<string> {
 
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
+}
+
+function extractSingleString(value: unknown, path: string[]): string | undefined {
+  const resolved = resolvePath(value, path);
+  return typeof resolved === "string" && resolved ? resolved : undefined;
+}
+
+function extractSingleStringArray(value: unknown, path: string[]): string[] | undefined {
+  const resolved = extractSingleString(value, path);
+  return resolved ? [resolved] : undefined;
+}
+
+function extractStringArray(value: unknown, path: string[]): string[] | undefined {
+  const resolved = resolvePath(value, path);
+  if (!Array.isArray(resolved)) {
+    return undefined;
+  }
+  const items = resolved.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+  return items.length > 0 ? items : undefined;
+}
+
+function resolvePath(value: unknown, path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current) || !(key in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
 }
 
 export default App;
