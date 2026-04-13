@@ -81,6 +81,11 @@
       "name": "beautiful_girl_ver2.safetensors",
       "target": "models/loras/beautiful_girl_ver2.safetensors",
       "url": "https://civitai.com/api/download/models/207269?token={{CIVITAI_TOKEN}}"
+    },
+    {
+      "name": "Super_Eye_Detailer_By_Stable_Yogi_SDPD0.safetensors",
+      "target": "models/loras/Super_Eye_Detailer_By_Stable_Yogi_SDPD0.safetensors",
+      "url": "https://civitai.com/api/download/models/1071060?token={{CIVITAI_TOKEN}}"
     }
   ]
 }
