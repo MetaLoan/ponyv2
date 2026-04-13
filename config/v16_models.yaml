@@ -76,6 +76,11 @@
       "name": "LoRA-girls-sdxl-v4.safetensors",
       "target": "models/loras/LoRA-girls-sdxl-v4.safetensors",
       "url": "https://civitai.com/api/download/models/500918?token={{CIVITAI_TOKEN}}"
+    },
+    {
+      "name": "beautiful_girl_ver2.safetensors",
+      "target": "models/loras/beautiful_girl_ver2.safetensors",
+      "url": "https://civitai.com/api/download/models/207269?token={{CIVITAI_TOKEN}}"
     }
   ]
 }
