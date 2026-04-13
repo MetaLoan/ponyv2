@@ -104,6 +104,28 @@ Notes:
 - Set `INSTALL_CUSTOM_NODES=0` to skip custom node installation.
 - Restart ComfyUI after install so newly added nodes are registered.
 
+## On-demand model sync in workers
+
+The RunPod handler can lazily pull missing models from S3 before a job starts.
+
+Supported env vars:
+- `MODEL_SYNC_ON_DEMAND=1` to enable the feature
+- `MODEL_S3_ACCESS_KEY_ID`
+- `MODEL_S3_SECRET_ACCESS_KEY`
+- `MODEL_S3_BUCKET`
+- `MODEL_S3_ENDPOINT_URL`
+- `MODEL_S3_REGION`
+- `MODEL_S3_ROOT_PREFIX`
+
+Behavior:
+- The handler inspects the final rendered prompt and syncs the checkpoint, LoRA, and upscale model names that are actually referenced.
+- A local cache metadata file is stored next to each downloaded model as `<model>.sync.json`.
+- If a worker already has the file locally, it will reuse the cached file.
+- If the remote object has changed, the worker refreshes it using the S3 object `ETag` and size as the cache key.
+- If the remote sync cannot be checked but the local file exists, the worker keeps using the local copy instead of failing the job.
+
+This gives you incremental model rollout without rebuilding the image, while still failing fast if a requested model is missing everywhere.
+
 ## Fly.io web tester
 
 This repo now includes a Fly-specific deployment for the React + Go tester:

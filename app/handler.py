@@ -1,8 +1,10 @@
 import base64
 import io
 import json
+import fcntl
 import mimetypes
 import os
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -20,6 +22,20 @@ WORKFLOW_API_PATH = Path(os.getenv("WORKFLOW_API_PATH", "/workspace/runpod-slim/
 WORKFLOW_V3_PATH = Path(os.getenv("WORKFLOW_V3_PATH", "/workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json"))
 KEEP_INTERMEDIATE_DEFAULT = os.getenv("KEEP_INTERMEDIATE_DEFAULT", "1") == "1"
 KEY_ENV_FILE = os.getenv("KEY_ENV_FILE", "")
+MODEL_SYNC_ENABLED = os.getenv("MODEL_SYNC_ON_DEMAND", "1") == "1"
+MODEL_SYNC_LOCK_PATH = Path(os.getenv("MODEL_SYNC_LOCK_PATH", "/tmp/ponyv2-model-sync.lock"))
+MODEL_S3_ACCESS_KEY = os.getenv("MODEL_S3_ACCESS_KEY_ID", os.getenv("S3_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", "")))
+MODEL_S3_SECRET_KEY = os.getenv("MODEL_S3_SECRET_ACCESS_KEY", os.getenv("S3_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", "")))
+MODEL_S3_BUCKET = os.getenv("MODEL_S3_BUCKET", os.getenv("S3_BUCKET", "")).strip()
+MODEL_S3_ENDPOINT = os.getenv("MODEL_S3_ENDPOINT_URL", os.getenv("S3_ENDPOINT_URL", "")).strip()
+MODEL_S3_REGION = os.getenv("MODEL_S3_REGION", os.getenv("S3_REGION", "eu-ro-1"))
+MODEL_S3_ROOT_PREFIX = os.getenv("MODEL_S3_ROOT_PREFIX", os.getenv("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models")).strip("/")
+
+MODEL_KIND_TO_FOLDER = {
+    "checkpoint": "checkpoints",
+    "lora": "loras",
+    "upscale_model": "upscale_models",
+}
 
 
 def _load_key_env_file() -> None:
@@ -75,6 +91,186 @@ def resolve_media_to_comfy_filename(media: str, prefix: str) -> str:
     if media.startswith("http://") or media.startswith("https://"):
         return _download_url_to_input(media, prefix)
     return _decode_base64_to_input(media, prefix)
+
+
+def _local_model_path(kind: str, name: str) -> Path:
+    folder = MODEL_KIND_TO_FOLDER[kind]
+    return COMFY_ROOT / "models" / folder / name
+
+
+def _local_model_meta_path(model_path: Path) -> Path:
+    return model_path.with_name(model_path.name + ".sync.json")
+
+
+def _model_s3_key(kind: str, name: str) -> str:
+    folder = MODEL_KIND_TO_FOLDER[kind]
+    return f"{MODEL_S3_ROOT_PREFIX}/{folder}/{name}"
+
+
+def _model_sync_client_and_cfg():
+    if not MODEL_SYNC_ENABLED:
+        return None, None
+    if not (MODEL_S3_ACCESS_KEY and MODEL_S3_SECRET_KEY and MODEL_S3_BUCKET and MODEL_S3_ENDPOINT):
+        return None, None
+    endpoint = MODEL_S3_ENDPOINT.rstrip("/")
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=MODEL_S3_ACCESS_KEY,
+        aws_secret_access_key=MODEL_S3_SECRET_KEY,
+        region_name=MODEL_S3_REGION,
+    )
+    return s3, {
+        "bucket": MODEL_S3_BUCKET,
+        "root_prefix": MODEL_S3_ROOT_PREFIX,
+        "endpoint": endpoint,
+    }
+
+
+def _acquire_model_sync_lock():
+    MODEL_SYNC_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = MODEL_SYNC_LOCK_PATH.open("w")
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    return lock_file
+
+
+def _s3_object_head(s3_client, bucket: str, key: str):
+    try:
+        return s3_client.head_object(Bucket=bucket, Key=key)
+    except Exception as exc:
+        return None, exc
+
+
+def _load_local_model_meta(model_path: Path) -> Dict:
+    meta_path = _local_model_meta_path(model_path)
+    if not meta_path.exists():
+        return {}
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_local_model_meta(model_path: Path, meta: Dict) -> None:
+    meta_path = _local_model_meta_path(model_path)
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+
+
+def _download_s3_model(s3_client, bucket: str, key: str, dst: Path, head: Dict) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(delete=False, dir=str(dst.parent), prefix=f".{dst.name}.") as tmp:
+        tmp_path = Path(tmp.name)
+        s3_client.download_fileobj(bucket, key, tmp)
+    os.replace(tmp_path, dst)
+    _save_local_model_meta(
+        dst,
+        {
+            "bucket": bucket,
+            "key": key,
+            "etag": head.get("ETag"),
+            "size": head.get("ContentLength"),
+            "last_modified": head.get("LastModified").isoformat() if head.get("LastModified") else None,
+        },
+    )
+
+
+def _ensure_model_available(s3_client, cfg: Dict, kind: str, name: str, warnings: List[str]) -> None:
+    if kind not in MODEL_KIND_TO_FOLDER:
+        raise RuntimeError(f"Unsupported model kind: {kind}")
+    model_path = _local_model_path(kind, name)
+    key = _model_s3_key(kind, name)
+    head = None
+    head_err = None
+    try:
+        head = s3_client.head_object(Bucket=cfg["bucket"], Key=key)
+    except Exception as exc:
+        head_err = exc
+
+    if model_path.exists() and model_path.stat().st_size > 0:
+        meta = _load_local_model_meta(model_path)
+        if head and meta.get("etag") == head.get("ETag") and int(meta.get("size") or -1) == int(head.get("ContentLength") or -2):
+            return
+        if head and not meta:
+            _save_local_model_meta(
+                model_path,
+                {
+                    "bucket": cfg["bucket"],
+                    "key": key,
+                    "etag": head.get("ETag"),
+                    "size": head.get("ContentLength"),
+                    "last_modified": head.get("LastModified").isoformat() if head.get("LastModified") else None,
+                },
+            )
+            return
+
+        if not head:
+            warnings.append(f"using cached {kind}:{name}")
+            return
+
+    if not head:
+        raise RuntimeError(
+            f"Model sync failed for {kind}:{name} at {key}: "
+            f"{head_err if head_err else 'missing remote object'}"
+        )
+
+    warnings.append(f"synced {kind}:{name}")
+    _download_s3_model(s3_client, cfg["bucket"], key, model_path, head)
+
+
+def sync_requested_models(prompt: Dict, input_data: Dict) -> List[str]:
+    if not MODEL_SYNC_ENABLED:
+        return []
+    s3_client, cfg = _model_sync_client_and_cfg()
+    if not s3_client:
+        return []
+
+    specs: List[Tuple[str, str]] = []
+    ckpt_name = ""
+    if isinstance(prompt, dict):
+        ckpt_node = prompt.get("1", {})
+        if isinstance(ckpt_node, dict):
+            ckpt_name = str(ckpt_node.get("inputs", {}).get("ckpt_name", "")).strip()
+    if not ckpt_name:
+        ckpt_name = str(input_data.get("ckpt_name", "")).strip()
+    if ckpt_name:
+        specs.append(("checkpoint", ckpt_name))
+    if isinstance(prompt, dict):
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            class_type = str(node.get("class_type", "")).strip()
+            inputs = node.get("inputs", {}) if isinstance(node.get("inputs", {}), dict) else {}
+            if class_type == "LoraLoader":
+                lora_name = str(inputs.get("lora_name", "")).strip()
+                if lora_name:
+                    specs.append(("lora", lora_name))
+            elif class_type == "UpscaleModelLoader":
+                upscale_name = str(inputs.get("model_name", "")).strip()
+                if upscale_name:
+                    specs.append(("upscale_model", upscale_name))
+    if not specs and isinstance(input_data.get("loras"), list):
+        for item in input_data["loras"]:
+            if isinstance(item, dict) and str(item.get("name", "")).strip():
+                specs.append(("lora", str(item["name"]).strip()))
+    if not specs:
+        upscale_name = str(input_data.get("upscale_model_name", "")).strip()
+        if upscale_name and bool(input_data.get("enable_upscale", input_data.get("use_upscale", False))):
+            specs.append(("upscale_model", upscale_name))
+
+    if not specs:
+        return []
+
+    synced: List[str] = []
+    lock_file = _acquire_model_sync_lock()
+    try:
+        for kind, name in sorted(set(specs)):
+            _ensure_model_available(s3_client, cfg, kind, name, synced)
+    finally:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
+    return synced
 
 
 def load_json(path: Path) -> Dict:
@@ -512,6 +708,7 @@ def handler(event: Dict) -> Dict:
         prompt["9"]["inputs"]["image"] = pose_filename
 
     use_upscale, enable_pulid = apply_overrides(prompt, data)
+    synced_models = sync_requested_models(prompt, data)
     keep_intermediate = bool(data.get("keep_intermediate", KEEP_INTERMEDIATE_DEFAULT))
     jpg_quality = int(data.get("jpg_quality", 85))
 
@@ -537,6 +734,7 @@ def handler(event: Dict) -> Dict:
             "final_local_file": final_images[0]["filename"],
             "final_local_files": [x["filename"] for x in final_images],
             "intermediate_local_files": [x["filename"] for x in intermediate_images],
+            "synced_models": synced_models,
         }
 
     final_urls: List[str] = []
@@ -569,6 +767,7 @@ def handler(event: Dict) -> Dict:
         "final_url": final_url,
         "final_urls": final_urls,
         "intermediate_urls": intermediate_urls,
+        "synced_models": synced_models,
         "meta": {
             "mode": data["mode"],
             "pose_mode": "external_pose" if has_pose else ("text_only" if data["mode"] == "text_only" else "dual_pass_auto_pose"),
