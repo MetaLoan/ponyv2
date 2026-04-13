@@ -71,6 +71,11 @@
       "name": "NSFW_POV_AllInOne.safetensors",
       "target": "models/loras/NSFW_POV_AllInOne.safetensors",
       "url": "https://civitai.com/api/download/models/160240?token={{CIVITAI_TOKEN}}"
+    },
+    {
+      "name": "LoRA-girls-sdxl-v4.safetensors",
+      "target": "models/loras/LoRA-girls-sdxl-v4.safetensors",
+      "url": "https://civitai.com/api/download/models/500918?token={{CIVITAI_TOKEN}}"
     }
   ]
 }
