@@ -135,6 +135,7 @@ Default behavior:
 - Model defaults to `wan2.7-i2v`
 - Data inspection header defaults to `{"input":"disable","output":"disable"}`
 - If `enable_i2v` is turned on, the tester sends each final image as the first frame of a separate video task
+- This is the same key used by `qwen_swap_face`; the worker also falls back to `QWEN_API_KEY` if you prefer that naming
 
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.

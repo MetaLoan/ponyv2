@@ -171,16 +171,21 @@ type comfyImage struct {
 func NewApp() (*App, error) {
 	repoRoot := mustGetwd()
 	cfg := Config{
-		Addr:              envOrDefault("V16WEB_ADDR", ":8080"),
-		RepoRoot:          repoRoot,
-		FrontendDist:      filepath.Join(repoRoot, "frontend", "dist"),
-		WorkflowTemplate:  filepath.Join(repoRoot, "workflows", "pulid_sdxl_workflow_web_api.json"),
-		KeyEnvFile:        envOrDefault("KEY_ENV_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "key.env"))),
-		S3CredsFile:       envOrDefault("S3_CREDENTIALS_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "s3-credentials.txt"))),
-		S3RootPrefix:      envOrDefault("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models"),
-		S3Region:          envOrDefault("S3_REGION", "eu-ro-1"),
-		S3CatalogScript:   envOrDefault("S3_CATALOG_SCRIPT", filepath.Join(repoRoot, "scripts", "list_model_catalog.py")),
-		DashScopeAPIKey:   envOrDefault("DASHSCOPE_API_KEY", ""),
+		Addr:             envOrDefault("V16WEB_ADDR", ":8080"),
+		RepoRoot:         repoRoot,
+		FrontendDist:     filepath.Join(repoRoot, "frontend", "dist"),
+		WorkflowTemplate: filepath.Join(repoRoot, "workflows", "pulid_sdxl_workflow_web_api.json"),
+		KeyEnvFile:       envOrDefault("KEY_ENV_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "key.env"))),
+		S3CredsFile:      envOrDefault("S3_CREDENTIALS_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "s3-credentials.txt"))),
+		S3RootPrefix:     envOrDefault("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models"),
+		S3Region:         envOrDefault("S3_REGION", "eu-ro-1"),
+		S3CatalogScript:  envOrDefault("S3_CATALOG_SCRIPT", filepath.Join(repoRoot, "scripts", "list_model_catalog.py")),
+		DashScopeAPIKey: firstNonEmpty(
+			os.Getenv("DASHSCOPE_API_KEY"),
+			os.Getenv("QWEN_API_KEY"),
+			os.Getenv("DASHSCOPE_APIKEY"),
+			os.Getenv("QWEN_APIKEY"),
+		),
 		DashScopeAPIURL:   envOrDefault("DASHSCOPE_I2V_API_URL", "https://dashscope-intl.aliyuncs.com/api/v1"),
 		DashScopeHeader:   envOrDefault("DASHSCOPE_DATA_INSPECTION_HEADER", `{"input":"disable","output":"disable"}`),
 		DashScopeI2VModel: envOrDefault("DASHSCOPE_I2V_MODEL", "wan2.7-i2v"),
@@ -1125,7 +1130,7 @@ func imageBytesToDataURL(data []byte, contentType string) string {
 func (a *App) runDashScopeI2V(ctx context.Context, imageURL string, req GenerateRequest) (string, error) {
 	apiKey := strings.TrimSpace(a.Config.DashScopeAPIKey)
 	if apiKey == "" {
-		return "", errors.New("DASHSCOPE_API_KEY is required for i2v")
+		return "", errors.New("DASHSCOPE_API_KEY (shared with qwen) is required for i2v")
 	}
 	model := firstNonEmpty(req.I2VModel, a.Config.DashScopeI2VModel, "wan2.7-i2v")
 	prompt := firstNonEmpty(req.I2VPrompt, req.Prompt, "保持主体一致，生成自然流畅、画面连贯的动态视频，镜头稳定，动作真实，细节清晰。")
