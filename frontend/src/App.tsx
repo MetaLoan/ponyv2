@@ -120,6 +120,8 @@ function App() {
   const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
   const [busy, setBusy] = useState<"" | "render" | "generate">("");
   const [error, setError] = useState("");
+  const [payloadJsonText, setPayloadJsonText] = useState("");
+  const [payloadImportError, setPayloadImportError] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -366,6 +368,184 @@ function App() {
 
   function removeLora(id: string) {
     setLoras((rows) => rows.filter((row) => row.id !== id));
+  }
+
+  function loadPayloadFromJson() {
+    setPayloadImportError("");
+    try {
+      const parsed = JSON.parse(payloadJsonText) as unknown;
+      const source = extractImportSource(parsed);
+
+      const importedMode = asMode(source.mode);
+      if (importedMode) {
+        setMode(importedMode);
+      }
+
+      if (typeof source.prompt === "string") {
+        setPrompt(source.prompt);
+      }
+      if (typeof source.negative_prompt === "string") {
+        setNegativePrompt(source.negative_prompt);
+      }
+      if (typeof source.qwen_swap_prompt === "string") {
+        setQwenSwapPrompt(source.qwen_swap_prompt);
+      }
+      if (typeof source.qwen_model === "string") {
+        setQwenModel(source.qwen_model);
+      }
+      if (typeof source.qwen_size === "string") {
+        setQwenSize(source.qwen_size);
+      }
+      if (typeof source.ckpt_name === "string") {
+        setCkptName(source.ckpt_name);
+      }
+      if (typeof source.width === "number") {
+        setWidth(source.width);
+      }
+      if (typeof source.height === "number") {
+        setHeight(source.height);
+      }
+      if (typeof source.batch_size === "number") {
+        setBatchSize(source.batch_size);
+      }
+      if (typeof source.base_steps === "number") {
+        setBaseSteps(source.base_steps);
+      }
+      if (typeof source.base_seed === "number") {
+        setBaseSeed(source.base_seed);
+      }
+      if (typeof source.base_cfg === "number") {
+        setBaseCfg(source.base_cfg);
+      }
+      if (typeof source.base_denoise === "number") {
+        setBaseDenoise(source.base_denoise);
+      }
+      if (typeof source.base_sampler_name === "string") {
+        setBaseSamplerName(source.base_sampler_name);
+      }
+      if (typeof source.base_scheduler === "string") {
+        setBaseScheduler(source.base_scheduler);
+      }
+      if (typeof source.steps === "number") {
+        setSteps(source.steps);
+      }
+      if (typeof source.seed === "number") {
+        setSeed(source.seed);
+      }
+      if (typeof source.cfg === "number") {
+        setCfg(source.cfg);
+      }
+      if (typeof source.sampler_name === "string") {
+        setSamplerName(source.sampler_name);
+      }
+      if (typeof source.scheduler === "string") {
+        setScheduler(source.scheduler);
+      }
+      if (typeof source.denoise === "number") {
+        setDenoise(source.denoise);
+      }
+      if (typeof source.enable_pulid === "boolean") {
+        setEnablePulid(source.enable_pulid);
+      }
+      if (typeof source.pulid_weight === "number") {
+        setPulidWeight(source.pulid_weight);
+      }
+      if (typeof source.pulid_start_at === "number") {
+        setPulidStartAt(source.pulid_start_at);
+      }
+      if (typeof source.pulid_end_at === "number") {
+        setPulidEndAt(source.pulid_end_at);
+      }
+      if (typeof source.pulid_method === "string") {
+        setPulidMethod(source.pulid_method);
+      }
+      if (typeof source.cn_depth_strength === "number") {
+        setCnDepthStrength(source.cn_depth_strength);
+      }
+      if (typeof source.cn_depth_start_percent === "number") {
+        setCnDepthStartPercent(source.cn_depth_start_percent);
+      }
+      if (typeof source.cn_depth_end_percent === "number") {
+        setCnDepthEndPercent(source.cn_depth_end_percent);
+      }
+      if (typeof source.cn_pose_strength === "number") {
+        setCnPoseStrength(source.cn_pose_strength);
+      }
+      if (typeof source.cn_pose_start_percent === "number") {
+        setCnPoseStartPercent(source.cn_pose_start_percent);
+      }
+      if (typeof source.cn_pose_end_percent === "number") {
+        setCnPoseEndPercent(source.cn_pose_end_percent);
+      }
+      if (typeof source.enable_lora === "boolean") {
+        setEnableLora(source.enable_lora);
+      }
+      if (Array.isArray(source.loras)) {
+        const rows = source.loras
+          .filter((item) => item && typeof item === "object")
+          .map((item) => {
+            const row = item as Record<string, unknown>;
+            return {
+              id: crypto.randomUUID(),
+              name: typeof row.name === "string" ? row.name : "",
+              strength_model: typeof row.strength_model === "number" ? row.strength_model : 0.6,
+              strength_clip: typeof row.strength_clip === "number" ? row.strength_clip : 0.9,
+            } satisfies LoraRow;
+          });
+        setLoras(rows.length > 0 ? rows : [defaultLora()]);
+      }
+      if (typeof source.enable_upscale === "boolean") {
+        setEnableUpscale(source.enable_upscale);
+      }
+      if (typeof source.upscale_model_name === "string") {
+        setUpscaleModelName(source.upscale_model_name);
+      }
+      if (typeof source.keep_intermediate === "boolean") {
+        setKeepIntermediate(source.keep_intermediate);
+      }
+      if (typeof source.enable_i2v === "boolean") {
+        setEnableI2V(source.enable_i2v);
+      }
+      if (typeof source.i2v_prompt === "string") {
+        setI2VPrompt(source.i2v_prompt);
+      }
+      if (typeof source.i2v_model === "string") {
+        setI2VModel(source.i2v_model);
+      }
+      if (typeof source.i2v_resolution === "string") {
+        setI2VResolution(source.i2v_resolution);
+      }
+      if (typeof source.i2v_duration === "number") {
+        setI2VDuration(source.i2v_duration);
+      }
+      if (typeof source.i2v_seed === "number") {
+        setI2VSeed(source.i2v_seed);
+      }
+      if (typeof source.i2v_negative_prompt === "string") {
+        setI2VNegativePrompt(source.i2v_negative_prompt);
+      }
+      if (typeof source.i2v_audio_url === "string") {
+        setI2VAudioURL(source.i2v_audio_url);
+      }
+      if (typeof source.i2v_prompt_extend === "boolean") {
+        setI2VPromptExtend(source.i2v_prompt_extend);
+      }
+      if (typeof source.i2v_watermark === "boolean") {
+        setI2VWatermark(source.i2v_watermark);
+      }
+      if (typeof source.output_format === "string" && (source.output_format === "jpg" || source.output_format === "png")) {
+        setOutputFormat(source.output_format);
+      }
+      if (typeof source.jpg_quality === "number") {
+        setJpgQuality(source.jpg_quality);
+      }
+
+      setReferenceMedia(mediaFromImportedValue(source.reference_image));
+      setPoseMedia(mediaFromImportedValue(source.pose_image));
+      setQwenExtraMedia(mediaFromImportedValue(source.qwen_extra_image));
+    } catch (err) {
+      setPayloadImportError(String(err));
+    }
   }
 
   return (
@@ -691,6 +871,24 @@ function App() {
 
         <section className="grid two">
           <section className="card">
+            <h2>Import Payload</h2>
+            <textarea
+              rows={10}
+              value={payloadJsonText}
+              onChange={(e) => setPayloadJsonText(e.target.value)}
+              placeholder='Paste request JSON here, then click "Load JSON into form".'
+            />
+            <div className="inline actions">
+              <button type="button" disabled={!payloadJsonText.trim()} onClick={loadPayloadFromJson}>
+                Load JSON into form
+              </button>
+              <button type="button" className="ghost" onClick={() => setPayloadJsonText("")}>
+                Clear
+              </button>
+            </div>
+            {payloadImportError && <pre className="errorBox">{payloadImportError}</pre>}
+          </section>
+          <section className="card">
             <h2>Payload Preview</h2>
             <div className="toolbar">
               <button type="button" className="ghost" onClick={() => void copyText(JSON.stringify(payload, null, 2))}>
@@ -869,6 +1067,51 @@ async function resolveMedia(media: MediaState): Promise<string> {
 
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
+}
+
+function asPlainObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function extractImportSource(parsed: unknown): Record<string, unknown> {
+  const root = asPlainObject(parsed);
+  if (!root) {
+    throw new Error("JSON payload must be an object.");
+  }
+  const input = asPlainObject(root.input);
+  if (input) {
+    return input;
+  }
+  const metaOutput = resolvePath(root, ["meta", "output"]);
+  const metaOutputObj = asPlainObject(metaOutput);
+  if (metaOutputObj) {
+    const nestedMeta = asPlainObject(metaOutputObj.meta);
+    return nestedMeta ? { ...metaOutputObj, ...nestedMeta } : metaOutputObj;
+  }
+  return root;
+}
+
+function asMode(value: unknown): Mode | undefined {
+  if (value === "dual_pass_auto_pose" || value === "pose_then_face_swap" || value === "pose_only" || value === "text_only" || value === "qwen_swap_face") {
+    return value;
+  }
+  return undefined;
+}
+
+function mediaFromImportedValue(value: unknown): MediaState {
+  if (typeof value !== "string" || value.trim() === "") {
+    return { kind: "file", file: null, url: "", preview: "" };
+  }
+  const trimmed = value.trim();
+  return {
+    kind: "url",
+    file: null,
+    url: trimmed,
+    preview: trimmed,
+  };
 }
 
 function extractSingleString(value: unknown, path: string[]): string | undefined {

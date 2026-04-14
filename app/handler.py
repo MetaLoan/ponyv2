@@ -827,59 +827,25 @@ def _extract_dashscope_video_url(resp_json: Dict) -> str:
     raise RuntimeError(f"DashScope response missing video URL: {json.dumps(resp_json, ensure_ascii=False)[:4000]}")
 
 
-def _call_dashscope_i2v(
-    base_image_bytes: bytes,
-    prompt: str,
-    negative_prompt: str,
-    model: str,
-    resolution: str,
-    duration: int,
-    seed: int,
-    prompt_extend: bool,
-    watermark: bool,
-    audio_url: str,
-) -> Tuple[bytes, str]:
-    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("DASHSCOPE_API_KEY is required for i2v")
-    model_name = (model or I2V_MODEL).strip() or I2V_MODEL
-    prompt_text = (prompt or I2V_DEFAULT_PROMPT).strip() or I2V_DEFAULT_PROMPT
-    resolution_text = (resolution or "1080P").strip() or "1080P"
-    base_input, _ = _image_bytes_to_qwen_data_url(base_image_bytes)
-    payload = {
-        "model": model_name,
-        "input": {
-            "prompt": prompt_text,
-            "media": [
-                {
-                    "type": "first_frame",
-                    "url": base_input,
-                }
-            ],
-        },
-        "parameters": {
-            "resolution": resolution_text,
-            "duration": int(duration or 5),
-            "prompt_extend": bool(prompt_extend),
-            "watermark": bool(watermark),
-        },
-    }
-    if negative_prompt.strip():
-        payload["input"]["negative_prompt"] = negative_prompt.strip()
-    if seed:
-        payload["parameters"]["seed"] = int(seed)
-    if audio_url.strip():
-        payload["input"]["audio_url"] = audio_url.strip()
+def _i2v_input_style_for_model(model_name: str) -> str:
+    lowered = (model_name or "").strip().lower()
+    if any(token in lowered for token in ("wan2.6", "wan2.5", "wan2.2", "wanx2.1")):
+        return "img_url"
+    return "media"
 
+
+def _is_i2v_payload_shape_error(exc: Exception) -> bool:
+    message = str(exc)
+    return "Field required: input.media" in message or "Field required: input.img_url" in message
+
+
+def _submit_and_wait_dashscope_i2v(payload: Dict, api_key: str, api_url: str) -> Tuple[bytes, str]:
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
         "X-DashScope-Async": "enable",
         "X-DashScope-DataInspection": I2V_DATA_INSPECTION,
     }
-    api_url = I2V_API_URL.rstrip("/")
-    if not api_url.endswith("/video-synthesis"):
-        api_url = api_url + "/services/aigc/video-generation/video-synthesis"
     resp = requests.post(api_url, json=payload, headers=headers, timeout=300)
     resp.raise_for_status()
     data = resp.json()
@@ -910,6 +876,75 @@ def _call_dashscope_i2v(
         if status in {"FAILED", "CANCELED"}:
             raise RuntimeError(f"DashScope i2v task failed: {json.dumps(payload, ensure_ascii=False)[:4000]}")
     raise TimeoutError(f"DashScope i2v timed out for task_id {task_id}")
+
+
+def _call_dashscope_i2v(
+    base_image_bytes: bytes,
+    prompt: str,
+    negative_prompt: str,
+    model: str,
+    resolution: str,
+    duration: int,
+    seed: int,
+    prompt_extend: bool,
+    watermark: bool,
+    audio_url: str,
+) -> Tuple[bytes, str]:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("DASHSCOPE_API_KEY is required for i2v")
+    model_name = (model or I2V_MODEL).strip() or I2V_MODEL
+    prompt_text = (prompt or I2V_DEFAULT_PROMPT).strip() or I2V_DEFAULT_PROMPT
+    resolution_text = (resolution or "1080P").strip() or "1080P"
+    base_input, _ = _image_bytes_to_qwen_data_url(base_image_bytes)
+    api_url = I2V_API_URL.rstrip("/")
+    if not api_url.endswith("/video-synthesis"):
+        api_url = api_url + "/services/aigc/video-generation/video-synthesis"
+    styles = [_i2v_input_style_for_model(model_name)]
+    alternate = "img_url" if styles[0] == "media" else "media"
+    styles.append(alternate)
+
+    last_error: Optional[Exception] = None
+    for input_style in styles:
+        payload = {
+            "model": model_name,
+            "input": {
+                "prompt": prompt_text,
+            },
+            "parameters": {
+                "resolution": resolution_text,
+                "duration": int(duration or 5),
+                "prompt_extend": bool(prompt_extend),
+                "watermark": bool(watermark),
+            },
+        }
+        if input_style == "media":
+            payload["input"]["media"] = [
+                {
+                    "type": "first_frame",
+                    "url": base_input,
+                }
+            ]
+        else:
+            payload["input"]["img_url"] = base_input
+        if negative_prompt.strip():
+            payload["input"]["negative_prompt"] = negative_prompt.strip()
+        if seed:
+            payload["parameters"]["seed"] = int(seed)
+        if audio_url.strip():
+            payload["input"]["audio_url"] = audio_url.strip()
+
+        try:
+            return _submit_and_wait_dashscope_i2v(payload, api_key, api_url)
+        except Exception as exc:
+            last_error = exc
+            if input_style != styles[-1] and _is_i2v_payload_shape_error(exc):
+                continue
+            raise
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("DashScope i2v failed without a specific error")
 
 
 def get_r2_client_and_config():
