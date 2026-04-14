@@ -850,7 +850,12 @@ def _call_dashscope_i2v(
         "model": model_name,
         "input": {
             "prompt": prompt_text,
-            "img_url": base_input,
+            "media": [
+                {
+                    "type": "first_frame",
+                    "url": base_input,
+                }
+            ],
         },
         "parameters": {
             "resolution": resolution_text,
