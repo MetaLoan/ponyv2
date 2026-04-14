@@ -115,6 +115,27 @@ Default behavior:
 - Data inspection header defaults to `{"input":"disable", "output":"disable"}`
 - The worker sends the base-generated image as image 1, the user reference face as image 2, and an optional third image as image 3
 
+## I2V post-process env vars
+
+The web tester can optionally turn every final image into a short video using DashScope image-to-video.
+
+Required:
+
+- `DASHSCOPE_API_KEY`
+
+Optional overrides:
+
+- `DASHSCOPE_I2V_API_URL`
+- `DASHSCOPE_I2V_MODEL`
+- `DASHSCOPE_DATA_INSPECTION_HEADER`
+
+Default behavior:
+
+- API endpoint defaults to the Singapore DashScope video endpoint
+- Model defaults to `wan2.7-i2v`
+- Data inspection header defaults to `{"input":"disable","output":"disable"}`
+- If `enable_i2v` is turned on, the tester sends each final image as the first frame of a separate video task
+
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.

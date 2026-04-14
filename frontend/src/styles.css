@@ -166,7 +166,9 @@ label {
   gap: 0.5rem;
 }
 
-.imageCard img {
+.mediaPreview,
+.imageCard img,
+.imageCard video {
   width: auto;
   max-width: 100%;
   height: auto;

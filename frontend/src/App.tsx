@@ -100,6 +100,20 @@ function App() {
   const [enableUpscale, setEnableUpscale] = useState(true);
   const [upscaleModelName, setUpscaleModelName] = useState("4x-UltraSharp.pth");
   const [keepIntermediate, setKeepIntermediate] = useState(true);
+  const [enableI2V, setEnableI2V] = useState(false);
+  const [i2vPrompt, setI2VPrompt] = useState(
+    "保持主体一致，生成自然流畅、镜头稳定、画面连贯的动态视频，动作真实，细节清晰，电影感自然。"
+  );
+  const [i2vModel, setI2VModel] = useState("wan2.7-i2v");
+  const [i2vResolution, setI2VResolution] = useState("1080P");
+  const [i2vDuration, setI2VDuration] = useState(5);
+  const [i2vSeed, setI2VSeed] = useState<number>(12345);
+  const [i2vNegativePrompt, setI2VNegativePrompt] = useState(
+    "low quality, blurry, flicker, jitter, motion artifacts, deformed, extra limbs, bad proportions"
+  );
+  const [i2vAudioURL, setI2VAudioURL] = useState("");
+  const [i2vPromptExtend, setI2VPromptExtend] = useState(true);
+  const [i2vWatermark, setI2VWatermark] = useState(false);
   const [outputFormat, setOutputFormat] = useState<"jpg" | "png">("jpg");
   const [jpgQuality, setJpgQuality] = useState(85);
   const [renderResult, setRenderResult] = useState<GenerateResult | null>(null);
@@ -192,6 +206,16 @@ function App() {
       enable_upscale: enableUpscale,
       upscale_model_name: upscaleModelName,
       keep_intermediate: keepIntermediate,
+      enable_i2v: enableI2V,
+      i2v_prompt: i2vPrompt,
+      i2v_model: i2vModel,
+      i2v_resolution: i2vResolution,
+      i2v_duration: i2vDuration,
+      i2v_seed: i2vSeed,
+      i2v_negative_prompt: i2vNegativePrompt,
+      i2v_audio_url: i2vAudioURL,
+      i2v_prompt_extend: i2vPromptExtend,
+      i2v_watermark: i2vWatermark,
       output_format: outputFormat,
       jpg_quality: jpgQuality,
     };
@@ -241,6 +265,16 @@ function App() {
     enableUpscale,
     upscaleModelName,
     keepIntermediate,
+    enableI2V,
+    i2vPrompt,
+    i2vModel,
+    i2vResolution,
+    i2vDuration,
+    i2vSeed,
+    i2vNegativePrompt,
+    i2vAudioURL,
+    i2vPromptExtend,
+    i2vWatermark,
     outputFormat,
     jpgQuality,
   ]);
@@ -552,6 +586,56 @@ function App() {
           </section>
 
           <section className="card">
+            <h2>I2V Postprocess</h2>
+            <label className="toggle">
+              <input type="checkbox" checked={enableI2V} onChange={(e) => setEnableI2V(e.target.checked)} />
+              Enable i2v for final outputs
+            </label>
+            <div className="stack">
+              <label>
+                I2V Prompt
+                <textarea rows={4} value={i2vPrompt} onChange={(e) => setI2VPrompt(e.target.value)} />
+              </label>
+              <div className="inline">
+                <label>
+                  I2V Model
+                  <input value={i2vModel} onChange={(e) => setI2VModel(e.target.value)} />
+                </label>
+                <label>
+                  I2V Resolution
+                  <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
+                    <option value="480P">480P</option>
+                    <option value="720P">720P</option>
+                    <option value="1080P">1080P</option>
+                  </select>
+                </label>
+              </div>
+              <div className="inline">
+                <NumberField label="I2V Duration" value={i2vDuration} onChange={setI2VDuration} min={2} max={15} step={1} />
+                <NumberField label="I2V Seed" value={i2vSeed} onChange={setI2VSeed} min={0} max={2147483647} step={1} />
+              </div>
+              <label>
+                I2V Negative Prompt
+                <textarea rows={3} value={i2vNegativePrompt} onChange={(e) => setI2VNegativePrompt(e.target.value)} />
+              </label>
+              <label>
+                I2V Audio URL
+                <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
+              </label>
+              <div className="inline">
+                <label className="toggle">
+                  <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
+                  Prompt extend
+                </label>
+                <label className="toggle">
+                  <input type="checkbox" checked={i2vWatermark} onChange={(e) => setI2VWatermark(e.target.checked)} />
+                  Watermark
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
             <h2>PuLID</h2>
             <label className="toggle">
               <input
@@ -681,6 +765,12 @@ function ResultGallery({ result }: { result: GenerateResult }) {
     extractSingleStringArray(result, ["final_url"]) ??
     extractSingleStringArray(result, ["meta", "output", "final_url"]) ??
     [];
+  const finalVideoURLs =
+    extractStringArray(result, ["final_video_urls"]) ??
+    extractStringArray(result, ["meta", "output", "final_video_urls"]) ??
+    extractSingleStringArray(result, ["final_video_url"]) ??
+    extractSingleStringArray(result, ["meta", "output", "final_video_url"]) ??
+    [];
   const intermediates =
     extractStringArray(result, ["intermediate_urls"]) ??
     extractStringArray(result, ["meta", "output", "intermediate_urls"]) ??
@@ -698,6 +788,19 @@ function ResultGallery({ result }: { result: GenerateResult }) {
           </div>
           <a href={url} target="_blank" rel="noreferrer">
             <img src={url} alt={`final result ${idx + 1}`} />
+          </a>
+        </div>
+      ))}
+      {finalVideoURLs.map((url, idx) => (
+        <div key={url} className="imageCard">
+          <div className="imageCardHeader">
+            <span>{finalVideoURLs.length > 1 ? `Final Video ${idx + 1}` : "Final Video"}</span>
+            <button type="button" className="ghost small" onClick={() => void copyText(url)}>
+              Copy URL
+            </button>
+          </div>
+          <a href={url} target="_blank" rel="noreferrer">
+            <video className="mediaPreview" src={url} controls playsInline />
           </a>
         </div>
       ))}
