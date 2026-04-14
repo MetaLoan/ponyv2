@@ -826,6 +826,16 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"output_format":          req.OutputFormat,
 		"jpg_quality":            req.JPGQuality,
 		"keep_intermediate":      req.KeepIntermediate != nil && *req.KeepIntermediate,
+		"enable_i2v":             req.EnableI2V != nil && *req.EnableI2V,
+		"i2v_prompt":             req.I2VPrompt,
+		"i2v_model":              req.I2VModel,
+		"i2v_resolution":         req.I2VResolution,
+		"i2v_duration":           req.I2VDuration,
+		"i2v_seed":               req.I2VSeed,
+		"i2v_negative_prompt":    req.I2VNegativePrompt,
+		"i2v_audio_url":          req.I2VAudioURL,
+		"i2v_prompt_extend":      req.I2VPromptExtend != nil && *req.I2VPromptExtend,
+		"i2v_watermark":          req.I2VWatermark != nil && *req.I2VWatermark,
 		"request_id":             req.RequestID,
 	}
 	if req.PoseImage != "" {

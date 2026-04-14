@@ -882,12 +882,11 @@ def _call_dashscope_i2v(
     if not task_id:
         raise RuntimeError(f"DashScope i2v missing task_id: {json.dumps(data, ensure_ascii=False)[:4000]}")
 
-    task_base = I2V_API_URL.rstrip("/")
-    if task_base.endswith("/video-synthesis"):
-        task_base = task_base.rsplit("/services/aigc/video-generation/video-synthesis", 1)[0]
-    if not task_base.endswith("/api/v1"):
-        task_base = task_base.rstrip("/")
-    task_url = f"{task_base}/tasks/{task_id}"
+    if "/services/aigc/video-generation/video-synthesis" in api_url:
+        task_base = api_url.split("/services/aigc/video-generation/video-synthesis", 1)[0]
+    else:
+        task_base = api_url.rsplit("/video-synthesis", 1)[0]
+    task_url = f"{task_base.rstrip('/')}/tasks/{task_id}"
     deadline = time.time() + 50 * 60
     while time.time() < deadline:
         time.sleep(15)
