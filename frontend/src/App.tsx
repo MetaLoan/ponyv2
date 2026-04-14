@@ -171,9 +171,6 @@ function App() {
       : [];
     const body: Record<string, unknown> = {
       mode,
-      reference_image: undefined as string | undefined,
-      qwen_extra_image: undefined as string | undefined,
-      pose_image: undefined as string | undefined,
       prompt,
       negative_prompt: negativePrompt,
       width,
@@ -221,6 +218,18 @@ function App() {
       output_format: outputFormat,
       jpg_quality: jpgQuality,
     };
+    const referenceImageValue = mediaToPayloadValue(referenceMedia);
+    const poseImageValue = mediaToPayloadValue(poseMedia);
+    const qwenExtraImageValue = mediaToPayloadValue(qwenExtraMedia);
+    if (referenceImageValue) {
+      body.reference_image = referenceImageValue;
+    }
+    if (poseImageValue) {
+      body.pose_image = poseImageValue;
+    }
+    if (qwenExtraImageValue) {
+      body.qwen_extra_image = qwenExtraImageValue;
+    }
     if (mode === "qwen_swap_face") {
       body.qwen_swap_prompt = qwenSwapPrompt;
       body.qwen_model = qwenModel;
@@ -245,6 +254,9 @@ function App() {
     baseDenoise,
     baseSamplerName,
     baseScheduler,
+    referenceMedia,
+    poseMedia,
+    qwenExtraMedia,
     steps,
     seed,
     cfg,
@@ -1102,16 +1114,42 @@ function asMode(value: unknown): Mode | undefined {
 }
 
 function mediaFromImportedValue(value: unknown): MediaState {
+  if (typeof value === "string" && value.trim() !== "") {
+    const trimmed = value.trim();
+    return {
+      kind: "url",
+      file: null,
+      url: trimmed,
+      preview: trimmed,
+    };
+  }
+  const obj = asPlainObject(value);
+  if (obj) {
+    const candidate = [obj.url, obj.image, obj.img_url, obj.reference_image, obj.pose_image]
+      .find((item) => typeof item === "string" && item.trim() !== "");
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return {
+        kind: "url",
+        file: null,
+        url: trimmed,
+        preview: trimmed,
+      };
+    }
+  }
   if (typeof value !== "string" || value.trim() === "") {
     return { kind: "file", file: null, url: "", preview: "" };
   }
-  const trimmed = value.trim();
-  return {
-    kind: "url",
-    file: null,
-    url: trimmed,
-    preview: trimmed,
-  };
+  return { kind: "file", file: null, url: "", preview: "" };
+}
+
+function mediaToPayloadValue(media: MediaState): string | undefined {
+  if (media.kind === "url") {
+    const trimmed = media.url.trim();
+    return trimmed || undefined;
+  }
+  const preview = media.preview.trim();
+  return preview || undefined;
 }
 
 function extractSingleString(value: unknown, path: string[]): string | undefined {
