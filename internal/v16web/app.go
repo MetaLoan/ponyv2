@@ -37,27 +37,23 @@ type App struct {
 }
 
 type Config struct {
-	Addr              string
-	RepoRoot          string
-	FrontendDist      string
-	WorkflowTemplate  string
-	KeyEnvFile        string
-	S3CredsFile       string
-	ComfyAPIURL       string
-	RunPodAPIKey      string
-	RunPodEndpointID  string
-	S3Endpoint        string
-	S3Region          string
-	S3Bucket          string
-	S3AccessKey       string
-	S3SecretKey       string
-	S3RootPrefix      string
-	S3CatalogPython   string
-	S3CatalogScript   string
-	DashScopeAPIKey   string
-	DashScopeAPIURL   string
-	DashScopeHeader   string
-	DashScopeI2VModel string
+	Addr             string
+	RepoRoot         string
+	FrontendDist     string
+	WorkflowTemplate string
+	KeyEnvFile       string
+	S3CredsFile      string
+	ComfyAPIURL      string
+	RunPodAPIKey     string
+	RunPodEndpointID string
+	S3Endpoint       string
+	S3Region         string
+	S3Bucket         string
+	S3AccessKey      string
+	S3SecretKey      string
+	S3RootPrefix     string
+	S3CatalogPython  string
+	S3CatalogScript  string
 }
 
 type GenerateRequest struct {
@@ -180,15 +176,6 @@ func NewApp() (*App, error) {
 		S3RootPrefix:     envOrDefault("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models"),
 		S3Region:         envOrDefault("S3_REGION", "eu-ro-1"),
 		S3CatalogScript:  envOrDefault("S3_CATALOG_SCRIPT", filepath.Join(repoRoot, "scripts", "list_model_catalog.py")),
-		DashScopeAPIKey: firstNonEmpty(
-			os.Getenv("DASHSCOPE_API_KEY"),
-			os.Getenv("QWEN_API_KEY"),
-			os.Getenv("DASHSCOPE_APIKEY"),
-			os.Getenv("QWEN_APIKEY"),
-		),
-		DashScopeAPIURL:   envOrDefault("DASHSCOPE_I2V_API_URL", "https://dashscope-intl.aliyuncs.com/api/v1"),
-		DashScopeHeader:   envOrDefault("DASHSCOPE_DATA_INSPECTION_HEADER", `{"input":"disable","output":"disable"}`),
-		DashScopeI2VModel: envOrDefault("DASHSCOPE_I2V_MODEL", "wan2.7-i2v"),
 	}
 	cfg.S3CatalogPython = detectCatalogPython()
 	loadKeyEnvFile(cfg.KeyEnvFile)
@@ -249,13 +236,11 @@ func (a *App) routes() {
 
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":                true,
-		"engine":            a.engine(),
-		"comfy_api_url":     a.Config.ComfyAPIURL,
-		"runpod_ready":      a.Config.RunPodAPIKey != "" && a.Config.RunPodEndpointID != "",
-		"s3_ready":          a.s3Client != nil,
-		"dashscope_ready":   a.Config.DashScopeAPIKey != "",
-		"dashscope_api_url": a.Config.DashScopeAPIURL,
+		"ok":            true,
+		"engine":        a.engine(),
+		"comfy_api_url": a.Config.ComfyAPIURL,
+		"runpod_ready":  a.Config.RunPodAPIKey != "" && a.Config.RunPodEndpointID != "",
+		"s3_ready":      a.s3Client != nil,
 	})
 }
 
@@ -777,7 +762,6 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 			"enable_pulid":   req.EnablePulid != nil && *req.EnablePulid,
 			"enable_lora":    req.EnableLora != nil && *req.EnableLora,
 			"enable_upscale": req.EnableUpscale != nil && *req.EnableUpscale,
-			"enable_i2v":     req.EnableI2V != nil && *req.EnableI2V,
 		},
 	}
 	for _, img := range final {
@@ -790,26 +774,6 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 	if req.KeepIntermediate != nil && *req.KeepIntermediate {
 		for _, img := range intermediate {
 			out.IntermediateURLs = append(out.IntermediateURLs, a.makeLocalComfyViewURL(img))
-		}
-	}
-	if req.EnableI2V != nil && *req.EnableI2V {
-		videoURLs, err := a.applyI2V(ctx, req, out.FinalURLs)
-		if err != nil {
-			return nil, err
-		}
-		out.FinalVideoURLs = videoURLs
-		if len(videoURLs) > 0 {
-			out.FinalVideoURL = videoURLs[0]
-		}
-		out.Meta["i2v"] = map[string]interface{}{
-			"enabled":       true,
-			"model":         req.I2VModel,
-			"resolution":    req.I2VResolution,
-			"duration":      req.I2VDuration,
-			"seed":          req.I2VSeed,
-			"prompt_extend": req.I2VPromptExtend != nil && *req.I2VPromptExtend,
-			"watermark":     req.I2VWatermark != nil && *req.I2VWatermark,
-			"audio_url":     req.I2VAudioURL,
 		}
 	}
 	return out, nil
@@ -952,29 +916,6 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 					"output": output,
 				}
 			}
-			if req.EnableI2V != nil && *req.EnableI2V {
-				videoURLs, err := a.applyI2V(ctx, req, out.FinalURLs)
-				if err != nil {
-					return nil, err
-				}
-				out.FinalVideoURLs = videoURLs
-				if len(videoURLs) > 0 {
-					out.FinalVideoURL = videoURLs[0]
-				}
-				if out.Meta == nil {
-					out.Meta = map[string]interface{}{}
-				}
-				out.Meta["i2v"] = map[string]interface{}{
-					"enabled":       true,
-					"model":         req.I2VModel,
-					"resolution":    req.I2VResolution,
-					"duration":      req.I2VDuration,
-					"seed":          req.I2VSeed,
-					"prompt_extend": req.I2VPromptExtend != nil && *req.I2VPromptExtend,
-					"watermark":     req.I2VWatermark != nil && *req.I2VWatermark,
-					"audio_url":     req.I2VAudioURL,
-				}
-			}
 			return out, nil
 		case "FAILED", "CANCELLED", "TIMED_OUT":
 			return nil, fmt.Errorf("runpod job failed: %s", mustJSON(data))
@@ -1048,237 +989,6 @@ func (a *App) makeLocalComfyViewURL(img comfyImage) string {
 		values.Set("type", "output")
 	}
 	return "/api/comfy/view?" + values.Encode()
-}
-
-type dashScopeI2VCreateResponse struct {
-	Output struct {
-		TaskID     string `json:"task_id"`
-		TaskStatus string `json:"task_status"`
-	} `json:"output"`
-	RequestID string `json:"request_id"`
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-}
-
-type dashScopeI2VTaskResponse struct {
-	Output struct {
-		TaskID     string `json:"task_id"`
-		TaskStatus string `json:"task_status"`
-		VideoURL   string `json:"video_url"`
-	} `json:"output"`
-	RequestID string `json:"request_id"`
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-}
-
-func (a *App) fetchMediaBytes(ctx context.Context, mediaURL string) ([]byte, string, error) {
-	fetchURL := strings.TrimSpace(mediaURL)
-	if fetchURL == "" {
-		return nil, "", errors.New("empty media url")
-	}
-	if strings.HasPrefix(fetchURL, "/api/comfy/view") {
-		if a.Config.ComfyAPIURL == "" {
-			return nil, "", errors.New("COMFY_API_URL not configured")
-		}
-		if strings.HasPrefix(fetchURL, "/api/comfy/view?") {
-			fetchURL = a.Config.ComfyAPIURL + "/view?" + strings.TrimPrefix(fetchURL, "/api/comfy/view?")
-		} else {
-			fetchURL = a.Config.ComfyAPIURL + "/view" + strings.TrimPrefix(fetchURL, "/api/comfy/view")
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return nil, "", err
-	}
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, "", fmt.Errorf("media fetch failed: %s", strings.TrimSpace(string(b)))
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
-	if contentType != "" {
-		contentType = strings.Split(contentType, ";")[0]
-	}
-	if contentType == "" || !strings.HasPrefix(contentType, "image/") {
-		contentType = http.DetectContentType(data)
-	}
-	if contentType == "" || !strings.HasPrefix(contentType, "image/") {
-		contentType = "image/png"
-	}
-	return data, contentType, nil
-}
-
-func imageBytesToDataURL(data []byte, contentType string) string {
-	mimeType := strings.TrimSpace(contentType)
-	if mimeType == "" {
-		mimeType = http.DetectContentType(data)
-	}
-	if mimeType == "" {
-		mimeType = "image/png"
-	}
-	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
-}
-
-func (a *App) runDashScopeI2V(ctx context.Context, imageURL string, req GenerateRequest) (string, error) {
-	apiKey := strings.TrimSpace(a.Config.DashScopeAPIKey)
-	if apiKey == "" {
-		return "", errors.New("DASHSCOPE_API_KEY (shared with qwen) is required for i2v")
-	}
-	model := firstNonEmpty(req.I2VModel, a.Config.DashScopeI2VModel, "wan2.7-i2v")
-	prompt := firstNonEmpty(req.I2VPrompt, req.Prompt, "保持主体一致，生成自然流畅、画面连贯的动态视频，镜头稳定，动作真实，细节清晰。")
-	resolution := firstNonEmpty(req.I2VResolution, "1080P")
-	duration := firstPositive(req.I2VDuration, 5)
-	promptExtend := true
-	if req.I2VPromptExtend != nil {
-		promptExtend = *req.I2VPromptExtend
-	}
-	watermark := false
-	if req.I2VWatermark != nil {
-		watermark = *req.I2VWatermark
-	}
-	negativePrompt := strings.TrimSpace(req.I2VNegativePrompt)
-	seed := req.I2VSeed
-
-	imageBytes, contentType, err := a.fetchMediaBytes(ctx, imageURL)
-	if err != nil {
-		return "", err
-	}
-	payload := map[string]interface{}{
-		"model": model,
-		"input": map[string]interface{}{
-			"prompt": prompt,
-			"media": []map[string]interface{}{
-				{
-					"type": "first_frame",
-					"url":  imageBytesToDataURL(imageBytes, contentType),
-				},
-			},
-		},
-		"parameters": map[string]interface{}{
-			"resolution":    resolution,
-			"duration":      duration,
-			"prompt_extend": promptExtend,
-			"watermark":     watermark,
-		},
-	}
-	if negativePrompt != "" {
-		payload["input"].(map[string]interface{})["negative_prompt"] = negativePrompt
-	}
-	if seed != 0 {
-		payload["parameters"].(map[string]interface{})["seed"] = seed
-	}
-	if audioURL := strings.TrimSpace(req.I2VAudioURL); audioURL != "" {
-		payload["input"].(map[string]interface{})["media"] = append(
-			payload["input"].(map[string]interface{})["media"].([]map[string]interface{}),
-			map[string]interface{}{
-				"type": "driving_audio",
-				"url":  audioURL,
-			},
-		)
-	}
-
-	endpointURL := strings.TrimRight(firstNonEmpty(a.Config.DashScopeAPIURL, "https://dashscope-intl.aliyuncs.com/api/v1"), "/") + "/services/aigc/video-generation/video-synthesis"
-	body, _ := json.Marshal(payload)
-	createReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+apiKey)
-	createReq.Header.Set("X-DashScope-Async", "enable")
-	if header := strings.TrimSpace(a.Config.DashScopeHeader); header != "" {
-		createReq.Header.Set("X-DashScope-DataInspection", header)
-	}
-	createResp, err := a.httpClient.Do(createReq)
-	if err != nil {
-		return "", err
-	}
-	defer createResp.Body.Close()
-	createBody, err := io.ReadAll(createResp.Body)
-	if err != nil {
-		return "", err
-	}
-	if createResp.StatusCode >= 300 {
-		return "", fmt.Errorf("dashscope i2v create failed (%d): %s", createResp.StatusCode, string(createBody))
-	}
-	var create dashScopeI2VCreateResponse
-	if err := json.Unmarshal(createBody, &create); err != nil {
-		return "", fmt.Errorf("dashscope i2v create parse failed: %v (body: %s)", err, string(createBody))
-	}
-	taskID := strings.TrimSpace(create.Output.TaskID)
-	if taskID == "" {
-		return "", fmt.Errorf("dashscope i2v missing task_id: %s", string(createBody))
-	}
-	taskURL := strings.TrimRight(firstNonEmpty(a.Config.DashScopeAPIURL, "https://dashscope-intl.aliyuncs.com/api/v1"), "/") + "/tasks/" + url.PathEscape(taskID)
-	deadline := time.Now().Add(40 * time.Minute)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(15 * time.Second):
-		}
-		pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet, taskURL, nil)
-		if err != nil {
-			return "", err
-		}
-		pollReq.Header.Set("Authorization", "Bearer "+apiKey)
-		pollResp, err := a.httpClient.Do(pollReq)
-		if err != nil {
-			return "", err
-		}
-		pollBody, err := io.ReadAll(pollResp.Body)
-		pollResp.Body.Close()
-		if err != nil {
-			return "", err
-		}
-		if pollResp.StatusCode >= 300 {
-			return "", fmt.Errorf("dashscope i2v poll failed (%d): %s", pollResp.StatusCode, string(pollBody))
-		}
-		var task dashScopeI2VTaskResponse
-		if err := json.Unmarshal(pollBody, &task); err != nil {
-			return "", fmt.Errorf("dashscope i2v poll parse failed: %v (body: %s)", err, string(pollBody))
-		}
-		switch strings.ToUpper(strings.TrimSpace(task.Output.TaskStatus)) {
-		case "SUCCEEDED":
-			if strings.TrimSpace(task.Output.VideoURL) == "" {
-				return "", fmt.Errorf("dashscope i2v succeeded without video_url: %s", string(pollBody))
-			}
-			return task.Output.VideoURL, nil
-		case "FAILED", "CANCELED":
-			return "", fmt.Errorf("dashscope i2v task failed: %s", string(pollBody))
-		case "PENDING", "RUNNING", "UNKNOWN", "":
-			continue
-		default:
-			continue
-		}
-	}
-	return "", fmt.Errorf("dashscope i2v timed out for task_id %s", taskID)
-}
-
-func (a *App) applyI2V(ctx context.Context, req GenerateRequest, finalURLs []string) ([]string, error) {
-	if req.EnableI2V == nil || !*req.EnableI2V {
-		return nil, nil
-	}
-	if len(finalURLs) == 0 {
-		return nil, errors.New("no final image urls available for i2v")
-	}
-	videoURLs := make([]string, 0, len(finalURLs))
-	for _, imgURL := range finalURLs {
-		videoURL, err := a.runDashScopeI2V(ctx, imgURL, req)
-		if err != nil {
-			return nil, err
-		}
-		videoURLs = append(videoURLs, videoURL)
-	}
-	return videoURLs, nil
 }
 
 func (a *App) uploadMediaToComfy(ctx context.Context, media, prefix string) (string, error) {

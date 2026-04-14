@@ -117,7 +117,7 @@ Default behavior:
 
 ## I2V post-process env vars
 
-The web tester can optionally turn every final image into a short video using DashScope image-to-video.
+The RunPod worker can optionally turn every final image into a short video using DashScope image-to-video.
 
 Required:
 
@@ -134,7 +134,7 @@ Default behavior:
 - API endpoint defaults to the Singapore DashScope video endpoint
 - Model defaults to `wan2.7-i2v`
 - Data inspection header defaults to `{"input":"disable","output":"disable"}`
-- If `enable_i2v` is turned on, the tester sends each final image as the first frame of a separate video task
+- If `enable_i2v` is turned on, the worker sends each final image as the first frame of a separate video task
 - This is the same key used by `qwen_swap_face`; the worker also falls back to `QWEN_API_KEY` if you prefer that naming
 
 Notes:

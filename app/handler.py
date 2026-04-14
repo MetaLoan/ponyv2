@@ -50,6 +50,16 @@ QWEN_DATA_INSPECTION = os.getenv(
     '{"input":"disable", "output": "disable"}',
 )
 QWEN_DEFAULT_SWAP_PROMPT = "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
+I2V_API_URL = os.getenv(
+    "DASHSCOPE_I2V_API_URL",
+    os.getenv(
+        "DASHSCOPE_VIDEO_API_URL",
+        "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis",
+    ),
+)
+I2V_MODEL = os.getenv("DASHSCOPE_I2V_MODEL", "wan2.7-i2v")
+I2V_DATA_INSPECTION = os.getenv("DASHSCOPE_DATA_INSPECTION_HEADER", QWEN_DATA_INSPECTION)
+I2V_DEFAULT_PROMPT = "保持主体一致，生成自然流畅、画面连贯的动态视频，镜头稳定，动作真实，细节清晰。"
 
 
 def _first_env(*names: str, default: str = "") -> str:
@@ -453,6 +463,16 @@ def normalize_input(input_data: Dict) -> Dict:
     data.setdefault("qwen_model", QWEN_MODEL)
     data.setdefault("qwen_size", "")
     data.setdefault("qwen_extra_image", "")
+    data.setdefault("enable_i2v", False)
+    data.setdefault("i2v_prompt", data.get("prompt", I2V_DEFAULT_PROMPT))
+    data.setdefault("i2v_model", I2V_MODEL)
+    data.setdefault("i2v_resolution", "1080P")
+    data.setdefault("i2v_duration", 5)
+    data.setdefault("i2v_seed", 0)
+    data.setdefault("i2v_negative_prompt", "")
+    data.setdefault("i2v_audio_url", "")
+    data.setdefault("i2v_prompt_extend", True)
+    data.setdefault("i2v_watermark", False)
     data.setdefault("cn_depth_strength", 0.6)
     data.setdefault("cn_depth_start_percent", 0.0)
     data.setdefault("cn_depth_end_percent", 1.0)
@@ -798,6 +818,96 @@ def _call_qwen_face_swap(
     return img_resp.content
 
 
+def _extract_dashscope_video_url(resp_json: Dict) -> str:
+    output = resp_json.get("output", {}) if isinstance(resp_json, dict) else {}
+    if isinstance(output, dict):
+        video_url = str(output.get("video_url", "")).strip()
+        if video_url:
+            return video_url
+    raise RuntimeError(f"DashScope response missing video URL: {json.dumps(resp_json, ensure_ascii=False)[:4000]}")
+
+
+def _call_dashscope_i2v(
+    base_image_bytes: bytes,
+    prompt: str,
+    negative_prompt: str,
+    model: str,
+    resolution: str,
+    duration: int,
+    seed: int,
+    prompt_extend: bool,
+    watermark: bool,
+    audio_url: str,
+) -> Tuple[bytes, str]:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("DASHSCOPE_API_KEY is required for i2v")
+    model_name = (model or I2V_MODEL).strip() or I2V_MODEL
+    prompt_text = (prompt or I2V_DEFAULT_PROMPT).strip() or I2V_DEFAULT_PROMPT
+    resolution_text = (resolution or "1080P").strip() or "1080P"
+    base_input, _ = _image_bytes_to_qwen_data_url(base_image_bytes)
+    payload = {
+        "model": model_name,
+        "input": {
+            "prompt": prompt_text,
+            "img_url": base_input,
+        },
+        "parameters": {
+            "resolution": resolution_text,
+            "duration": int(duration or 5),
+            "prompt_extend": bool(prompt_extend),
+            "watermark": bool(watermark),
+        },
+    }
+    if negative_prompt.strip():
+        payload["input"]["negative_prompt"] = negative_prompt.strip()
+    if seed:
+        payload["parameters"]["seed"] = int(seed)
+    if audio_url.strip():
+        payload["input"]["audio_url"] = audio_url.strip()
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "X-DashScope-Async": "enable",
+        "X-DashScope-DataInspection": I2V_DATA_INSPECTION,
+    }
+    api_url = I2V_API_URL.rstrip("/")
+    if not api_url.endswith("/video-synthesis"):
+        api_url = api_url + "/services/aigc/video-generation/video-synthesis"
+    resp = requests.post(api_url, json=payload, headers=headers, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+    task_id = str(data.get("output", {}).get("task_id", "")).strip()
+    if not task_id:
+        raise RuntimeError(f"DashScope i2v missing task_id: {json.dumps(data, ensure_ascii=False)[:4000]}")
+
+    task_base = I2V_API_URL.rstrip("/")
+    if task_base.endswith("/video-synthesis"):
+        task_base = task_base.rsplit("/services/aigc/video-generation/video-synthesis", 1)[0]
+    if not task_base.endswith("/api/v1"):
+        task_base = task_base.rstrip("/")
+    task_url = f"{task_base}/tasks/{task_id}"
+    deadline = time.time() + 50 * 60
+    while time.time() < deadline:
+        time.sleep(15)
+        poll = requests.get(task_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=120)
+        poll.raise_for_status()
+        payload = poll.json()
+        status = str(payload.get("output", {}).get("task_status", "")).strip().upper()
+        if status == "SUCCEEDED":
+            video_url = _extract_dashscope_video_url(payload)
+            video_resp = requests.get(video_url, timeout=180)
+            video_resp.raise_for_status()
+            content_type = video_resp.headers.get("content-type", "").split(";")[0].strip()
+            if not content_type:
+                content_type = "video/mp4"
+            return video_resp.content, content_type
+        if status in {"FAILED", "CANCELED"}:
+            raise RuntimeError(f"DashScope i2v task failed: {json.dumps(payload, ensure_ascii=False)[:4000]}")
+    raise TimeoutError(f"DashScope i2v timed out for task_id {task_id}")
+
+
 def get_r2_client_and_config():
     access_key = os.getenv("R2_ACCESS_KEY", "")
     secret_key = os.getenv("R2_SECRET_KEY", "")
@@ -929,6 +1039,43 @@ def handler(event: Dict) -> Dict:
             qwen_final_images.append({"filename": filename, "subfolder": "", "type": "output"})
         final_images = qwen_final_images
 
+    i2v_enabled = bool(data.get("enable_i2v"))
+    i2v_final_videos: List[Dict] = []
+    if i2v_enabled:
+        i2v_prompt = str(data.get("i2v_prompt", "")).strip() or I2V_DEFAULT_PROMPT
+        i2v_model = str(data.get("i2v_model", I2V_MODEL)).strip() or I2V_MODEL
+        i2v_resolution = str(data.get("i2v_resolution", "1080P")).strip() or "1080P"
+        i2v_duration = int(data.get("i2v_duration", 5) or 5)
+        i2v_seed = int(data.get("i2v_seed", 0) or 0)
+        i2v_negative_prompt = str(data.get("i2v_negative_prompt", "")).strip()
+        i2v_audio_url = str(data.get("i2v_audio_url", "")).strip()
+        i2v_prompt_extend = bool(data.get("i2v_prompt_extend", True))
+        i2v_watermark = bool(data.get("i2v_watermark", False))
+        for idx, img_desc in enumerate(final_images, start=1):
+            base_raw = _read_output_image(img_desc)
+            video_raw, video_content_type = _call_dashscope_i2v(
+                base_raw,
+                i2v_prompt,
+                i2v_negative_prompt,
+                i2v_model,
+                i2v_resolution,
+                i2v_duration,
+                i2v_seed,
+                i2v_prompt_extend,
+                i2v_watermark,
+                i2v_audio_url,
+            )
+            filename = f"i2v_{request_id}_{idx:02d}.mp4"
+            _write_output_bytes(filename, video_raw)
+            i2v_final_videos.append(
+                {
+                    "filename": filename,
+                    "subfolder": "",
+                    "type": "output",
+                    "content_type": video_content_type,
+                }
+            )
+
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
         return {
@@ -938,6 +1085,8 @@ def handler(event: Dict) -> Dict:
             "warning": "R2 env vars missing; returning local filenames only",
             "final_local_file": final_images[0]["filename"],
             "final_local_files": [x["filename"] for x in final_images],
+            "final_video_local_file": i2v_final_videos[0]["filename"] if i2v_final_videos else "",
+            "final_video_local_files": [x["filename"] for x in i2v_final_videos],
             "intermediate_local_files": [x["filename"] for x in intermediate_images],
             "synced_models": synced_models,
         }
@@ -955,6 +1104,15 @@ def handler(event: Dict) -> Dict:
         final_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, final_raw, final_content_type))
     final_url = final_urls[0]
 
+    final_video_urls: List[str] = []
+    if i2v_enabled:
+        for idx, video_desc in enumerate(i2v_final_videos, start=1):
+            raw = _read_output_image(video_desc)
+            ext = Path(video_desc["filename"]).suffix.lower() or ".mp4"
+            content_type = "video/mp4"
+            key = f"{s3_cfg['prefix']}/{request_id}/final_video_{idx:02d}{ext}"
+            final_video_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, raw, content_type))
+
     intermediate_urls: List[str] = []
     if keep_intermediate:
         for idx, img_desc in enumerate(intermediate_images, start=1):
@@ -971,6 +1129,8 @@ def handler(event: Dict) -> Dict:
         "storage": {"provider": "r2", "bucket": s3_cfg["bucket"]},
         "final_url": final_url,
         "final_urls": final_urls,
+        "final_video_url": final_video_urls[0] if final_video_urls else "",
+        "final_video_urls": final_video_urls,
         "intermediate_urls": intermediate_urls,
         "synced_models": synced_models,
         "meta": {
@@ -986,6 +1146,16 @@ def handler(event: Dict) -> Dict:
             "enable_lora": bool(data.get("enable_lora")),
             "use_upscale": use_upscale,
             "qwen_model": qwen_model if qwen_mode else None,
+            "i2v": {
+                "enabled": i2v_enabled,
+                "model": i2v_model if i2v_enabled else None,
+                "resolution": i2v_resolution if i2v_enabled else None,
+                "duration": i2v_duration if i2v_enabled else None,
+                "seed": i2v_seed if i2v_enabled else None,
+                "prompt_extend": i2v_prompt_extend if i2v_enabled else None,
+                "watermark": i2v_watermark if i2v_enabled else None,
+                "audio_url": i2v_audio_url if i2v_enabled else None,
+            },
             "final_format": "png" if qwen_mode else ("jpg" if use_upscale else final_ext.lstrip(".")),
             "jpg_quality": jpg_quality if use_upscale and not qwen_mode else None,
         },
