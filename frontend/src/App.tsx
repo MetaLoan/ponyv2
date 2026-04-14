@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only";
+type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face";
 
 type CatalogItem = {
   name: string;
@@ -56,8 +56,18 @@ function App() {
   const [mode, setMode] = useState<Mode>("dual_pass_auto_pose");
   const [referenceMedia, setReferenceMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [poseMedia, setPoseMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
-  const [prompt, setPrompt] = useState("masterpiece, best quality, photorealistic, 1girl");
-  const [negativePrompt, setNegativePrompt] = useState("blurry, low quality, watermark");
+  const [qwenExtraMedia, setQwenExtraMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [prompt, setPrompt] = useState(
+    "masterpiece, best quality, ultra detailed, 8k raw photo, photorealistic, sharp focus, intricate details, rich skin texture, subsurface scattering, glossy skin, realistic anatomy, depth of field, volumetric lighting,"
+  );
+  const [negativePrompt, setNegativePrompt] = useState(
+    "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
+  );
+  const [qwenSwapPrompt, setQwenSwapPrompt] = useState(
+    "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
+  );
+  const [qwenModel, setQwenModel] = useState("qwen-image-edit-max");
+  const [qwenSize, setQwenSize] = useState("");
   const [ckptName, setCkptName] = useState("SDXL_Photorealistic_Mix_nsfw.safetensors");
   const [width, setWidth] = useState(832);
   const [height, setHeight] = useState(1216);
@@ -111,22 +121,22 @@ function App() {
       }
       const catalogJson = (await catalogResp.json()) as CatalogResponse;
       setCatalog(catalogJson);
-      if (catalogJson.checkpoints[0] && !ckptName) {
+      if (catalogJson?.checkpoints?.[0] && !ckptName) {
         setCkptName(catalogJson.checkpoints[0].name);
       }
-      if (catalogJson.loras[0] && !loras[0]?.name) {
+      if (catalogJson?.loras?.[0] && !loras[0]?.name) {
         setLoras((rows) =>
           rows.map((row, idx) => (idx === 0 ? { ...row, name: catalogJson.loras[0].name } : row))
         );
       }
-      if (catalogJson.upscale_models[0] && !upscaleModelName) {
+      if (catalogJson?.upscale_models?.[0] && !upscaleModelName) {
         setUpscaleModelName(catalogJson.upscale_models[0].name);
       }
     })().catch((err: unknown) => setCatalogError(String(err)));
   }, []);
 
   useEffect(() => {
-    if (mode === "pose_only" || mode === "text_only") {
+    if (mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face") {
       setEnablePulid(false);
     } else if (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap") {
       setEnablePulid(true);
@@ -143,9 +153,10 @@ function App() {
             strength_clip,
           }))
       : [];
-    return {
+    const body: Record<string, unknown> = {
       mode,
       reference_image: undefined as string | undefined,
+      qwen_extra_image: undefined as string | undefined,
       pose_image: undefined as string | undefined,
       prompt,
       negative_prompt: negativePrompt,
@@ -184,9 +195,19 @@ function App() {
       output_format: outputFormat,
       jpg_quality: jpgQuality,
     };
+    if (mode === "qwen_swap_face") {
+      body.qwen_swap_prompt = qwenSwapPrompt;
+      body.qwen_model = qwenModel;
+      body.qwen_size = qwenSize;
+    }
+    return body;
   }, [
     mode,
     prompt,
+    qwenSwapPrompt,
+    qwenModel,
+    qwenSize,
+    qwenExtraMedia,
     negativePrompt,
     width,
     height,
@@ -229,6 +250,7 @@ function App() {
     pose_then_face_swap: "Reference image + pose image + prompt. Render with external pose, then apply face identity.",
     pose_only: "Pose image + prompt. Pose-guided generation without PuLID face swap.",
     text_only: "Prompt only. No reference image, no pose image, no PuLID.",
+    qwen_swap_face: "Base image is generated first, then Qwen uses reference face image and optional image 3 for face swap.",
   }[mode];
 
   async function onRenderWorkflow() {
@@ -246,6 +268,12 @@ function App() {
       const body = { ...payload };
       if (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap") {
         body.reference_image = await resolveMedia(referenceMedia);
+      }
+      if (mode === "qwen_swap_face") {
+        body.reference_image = await resolveMedia(referenceMedia);
+        if (qwenExtraMedia.file || qwenExtraMedia.url.trim()) {
+          body.qwen_extra_image = await resolveMedia(qwenExtraMedia);
+        }
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
         body.pose_image = await resolveMedia(poseMedia);
@@ -275,12 +303,12 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose", patch: Partial<MediaState>) {
-    const setter = which === "reference" ? setReferenceMedia : setPoseMedia;
+  function updateMedia(which: "reference" | "pose" | "qwenExtra", patch: Partial<MediaState>) {
+    const setter = which === "reference" ? setReferenceMedia : which === "pose" ? setPoseMedia : setQwenExtraMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -290,7 +318,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -334,17 +362,28 @@ function App() {
             <option value="pose_then_face_swap">pose_then_face_swap: pose first, then face swap</option>
             <option value="pose_only">pose_only: pose-guided only</option>
             <option value="text_only">text_only: prompt only</option>
+            <option value="qwen_swap_face">qwen_swap_face: prompt then Qwen face swap</option>
           </select>
           <p className="muted compact">{modeSummary}</p>
         </section>
 
-        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap") && (
+        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face") && (
           <MediaCard
-            title="Reference Image"
+            title={mode === "qwen_swap_face" ? "Qwen Reference Face Image" : "Reference Image"}
             media={referenceMedia}
             onKindChange={(kind) => updateMedia("reference", { kind })}
             onFileChange={(e) => onFileChange("reference", e)}
             onURLChange={(value) => onURLChange("reference", value)}
+          />
+        )}
+
+        {mode === "qwen_swap_face" && (
+          <MediaCard
+            title="Qwen Optional Image 3"
+            media={qwenExtraMedia}
+            onKindChange={(kind) => updateMedia("qwenExtra", { kind })}
+            onFileChange={(e) => onFileChange("qwenExtra", e)}
+            onURLChange={(value) => onURLChange("qwenExtra", value)}
           />
         )}
 
@@ -364,6 +403,22 @@ function App() {
           <h2>Prompt</h2>
           <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
           <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />
+          {mode === "qwen_swap_face" && (
+            <div className="stack">
+              <label>
+                Qwen Swap Prompt
+                <textarea rows={4} value={qwenSwapPrompt} onChange={(e) => setQwenSwapPrompt(e.target.value)} />
+              </label>
+              <label>
+                Qwen Model
+                <input value={qwenModel} onChange={(e) => setQwenModel(e.target.value)} />
+              </label>
+              <label>
+                Qwen Size
+                <input placeholder="1024*1536" value={qwenSize} onChange={(e) => setQwenSize(e.target.value)} />
+              </label>
+            </div>
+          )}
         </section>
 
         <section className="grid two">
@@ -372,7 +427,7 @@ function App() {
             <label>
               Checkpoint
               <select value={ckptName} onChange={(e) => setCkptName(e.target.value)}>
-                {catalog.checkpoints.map((item) => (
+                {(catalog.checkpoints || []).map((item) => (
                   <option key={item.path} value={item.name}>
                     {item.name}
                   </option>
@@ -389,7 +444,7 @@ function App() {
                   <div className="subcard" key={row.id}>
                     <select value={row.name} onChange={(e) => updateLora(row.id, { name: e.target.value })}>
                       <option value="">Select LoRA</option>
-                      {catalog.loras.map((item) => (
+                      {(catalog.loras || []).map((item) => (
                         <option key={item.path} value={item.name}>
                           {item.name}
                         </option>
@@ -417,7 +472,7 @@ function App() {
               <label>
                 Upscale Model
                 <select value={upscaleModelName} onChange={(e) => setUpscaleModelName(e.target.value)}>
-                  {catalog.upscale_models.map((item) => (
+                  {(catalog.upscale_models || []).map((item) => (
                     <option key={item.path} value={item.name}>
                       {item.name}
                     </option>
@@ -499,7 +554,12 @@ function App() {
           <section className="card">
             <h2>PuLID</h2>
             <label className="toggle">
-              <input type="checkbox" checked={enablePulid} onChange={(e) => setEnablePulid(e.target.checked)} disabled={mode === "pose_only" || mode === "text_only"} />
+              <input
+                type="checkbox"
+                checked={enablePulid}
+                onChange={(e) => setEnablePulid(e.target.checked)}
+                disabled={mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face"}
+              />
               Enable PuLID
             </label>
             <label>
@@ -513,7 +573,7 @@ function App() {
             </div>
           </section>
 
-          {mode !== "text_only" && (
+          {mode !== "text_only" && mode !== "qwen_swap_face" && (
             <section className="card">
               <h2>ControlNet</h2>
               <div className="inline">

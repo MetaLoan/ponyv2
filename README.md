@@ -24,6 +24,7 @@ Recent fixes that matter operationally:
 - `3b4f24b` fixed mixed NumPy installs by uninstalling the runtime stack before reinstall
 - `6f16ea4` aligned ONNX Runtime GPU with CUDA 12 so InsightFace can use `CUDAExecutionProvider`
 - `464ad4a` made R2 config accept both `R2_ACCOUNT_ID` and `R2_ENDPOINT`
+- `qwen_swap_face` adds a DashScope Qwen image-edit face-swap post-process on top of the existing Comfy workflow
 
 ## One-line install
 
@@ -98,6 +99,27 @@ Style B:
 
 When both are present, `R2_ENDPOINT` is used first. `R2_PUBLIC_URL` must be the public CDN/base URL used in returned file URLs.
 
+## Qwen face-swap env vars
+
+The RunPod handler supports a post-process face swap mode backed by DashScope Qwen image edit.
+
+Required for `mode=qwen_swap_face`:
+
+- `DASHSCOPE_API_KEY`
+
+Optional overrides:
+
+- `DASHSCOPE_API_URL`
+- `DASHSCOPE_BASE_URL`
+- `DASHSCOPE_MODEL`
+- `DASHSCOPE_DATA_INSPECTION_HEADER`
+
+Default behavior:
+- API endpoint defaults to the Singapore DashScope image-edit endpoint
+- Model defaults to `qwen-image-edit-max`
+- Data inspection header defaults to `{"input":"disable", "output":"disable"}`
+- The worker sends the base-generated image as image 1, the user reference face as image 2, and an optional third image as image 3
+
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
 - Default `CIVITAI_TOKEN` in script comes from archived manifest and can be overridden via env.
@@ -125,6 +147,48 @@ Behavior:
 - If the remote sync cannot be checked but the local file exists, the worker keeps using the local copy instead of failing the job.
 
 This gives you incremental model rollout without rebuilding the image, while still failing fast if a requested model is missing everywhere.
+
+## One-off Civitai to S3 upload
+
+Use the helper script when you want to paste a Civitai model page URL and upload the resolved file directly into the shared model bucket:
+
+```bash
+KEY_FILE=/workspace/key.env \
+python3 scripts/civitai_to_s3.py "https://civitai.com/models/178167?modelVersionId=1071060" --kind lora
+```
+
+If you only have the token in your shell, you can also export it directly:
+
+```bash
+export CIVITAI_TOKEN="your_token"
+python3 scripts/civitai_to_s3.py "https://civitai.com/models/178167?modelVersionId=1071060" --kind lora
+```
+
+If you want to use the local credential files directly:
+
+```bash
+KEY_FILE=/Users/leo/Desktop/sdxl2img/key.env \
+S3_KEY_FILE=/Users/leo/Desktop/sdxl2img/s3-credentials.txt \
+python3 scripts/civitai_to_s3.py "https://civitai.com/models/178167?modelVersionId=1071060" --kind lora
+```
+
+Interactive shell wrapper:
+
+```bash
+bash scripts/civitai_to_s3.sh
+```
+
+Supported kinds:
+- `lora`
+- `checkpoint`
+- `upscale_model`
+
+The script extracts `modelVersionId`, downloads the model with your Civitai token, and uploads it to:
+- `runpod-slim/ComfyUI/models/loras/`
+- `runpod-slim/ComfyUI/models/checkpoints/`
+- `runpod-slim/ComfyUI/models/upscale_models/`
+
+By default it renames the downloaded file to a normalized `model_name_version_name.ext` pattern. You can override that with `--name`.
 
 ## Fly.io web tester
 

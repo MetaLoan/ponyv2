@@ -2,7 +2,7 @@
 
 ## 目标
 
-新增一个前端 Web 测试页，并同步改造 V16 workflow / handler，使系统支持四种出图模式、节点级开关和完整参数调节能力。
+新增一个前端 Web 测试页，并同步改造 V16 workflow / handler，使系统支持五种出图模式、节点级开关和完整参数调节能力。
 
 本文件定义需求边界、交互方式、接口契约和工作流改造范围，不包含具体实现代码。
 
@@ -29,14 +29,15 @@
 
 ### 功能目标
 
-需要支持以下 6 类能力：
+需要支持以下 7 类能力：
 
 1. 传人像图 + 提示词，完整走完 2 阶段生图
 2. 传人像图 + Pose 图解析 + 提示词生图后再换脸
 3. 只传 Pose 图解析，根据提示词生图
 4. 不传任何参考图，只传提示词直接生图
-5. 串联开关 LoRA 节点、开关 4x 放大节点
-6. 调整所有核心节点参数，包括种子、分辨率、批量、权重、步数、采样器、ControlNet 强度等
+5. 通过 DashScope Qwen 做换脸后处理
+6. 串联开关 LoRA 节点、开关 4x 放大节点
+7. 调整所有核心节点参数，包括种子、分辨率、批量、权重、步数、采样器、ControlNet 强度等
 
 ### 交付目标
 
@@ -110,6 +111,27 @@
 - 纯文生图测试
 - 校验基础 checkpoint / LoRA / sampler / upscale 配置
 
+### 模式 E：Qwen Swap Face
+
+输入：
+- `reference_image`
+- `prompt`
+
+可选：
+- `qwen_swap_prompt`
+- `qwen_model`
+- `qwen_size`
+- `qwen_extra_image`
+
+行为：
+- 先按 `prompt` 完成基础生图
+- 再调用 DashScope 千问图像编辑模型做人脸替换
+- 输出最终成品图
+
+用途：
+- 需要把参考人脸融合进生成图
+- 将换脸能力从 ComfyUI 工作流中独立出来
+
 ## 前端页面需求
 
 ### 页面目标
@@ -173,6 +195,11 @@
   - `base_*` 参数隐藏或忽略
 - 选择模式 D：
   - `reference_image` 隐藏或不必填
+  - `pose_image` 隐藏或不必填
+  - `PuLID` 默认关闭且不可开启
+  - `base_*` 参数隐藏或忽略
+- 选择模式 E：
+  - `reference_image` 必填
   - `pose_image` 隐藏或不必填
   - `PuLID` 默认关闭且不可开启
   - `base_*` 参数隐藏或忽略
@@ -265,7 +292,20 @@
 - 前端应支持增删 LoRA 行
 - 后端必须保持 LoRA 顺序有意义
 
-### 六、4x 放大参数
+### 六、Qwen 换脸参数
+
+- `qwen_swap_prompt`
+- `qwen_model`
+- `qwen_size`
+
+说明：
+- `qwen_swap_prompt` 用于描述换脸融合要求
+- `qwen_model` 默认 `qwen-image-edit-max`
+- `qwen_size` 可选，格式为 `宽*高`
+- `qwen_extra_image` 是可选第三张图，用于扩展融合参考
+- 模式 E 下前端应展示这些参数
+
+### 七、4x 放大参数
 
 - `enable_upscale`
 - `upscale_model_name`
@@ -387,11 +427,14 @@
 ```json
 {
   "input": {
-    "mode": "dual_pass_auto_pose | pose_then_face_swap | pose_only | text_only",
+    "mode": "dual_pass_auto_pose | pose_then_face_swap | pose_only | text_only | qwen_swap_face",
     "reference_image": "base64_or_url",
     "pose_image": "base64_or_url",
     "prompt": "text",
-    "negative_prompt": "text"
+    "negative_prompt": "text",
+    "qwen_swap_prompt": "text",
+    "qwen_model": "qwen-image-edit-max",
+    "qwen_size": "1024*1536"
   }
 }
 ```
@@ -428,6 +471,21 @@
 - 默认：
   - `enable_pulid=false`
 
+`qwen_swap_face`
+- 必填：
+  - `reference_image`
+  - `prompt`
+- 可选：
+  - `negative_prompt`
+  - `qwen_swap_prompt`
+  - `qwen_model`
+  - `qwen_size`
+  - `qwen_extra_image`
+- 不应要求：
+  - `pose_image`
+- 默认：
+  - `enable_pulid=false`
+
 ## handler / workflow 改造影响
 
 当前 workflow 中相关节点是固定写死的：
@@ -455,10 +513,11 @@
 
 改造后 workflow 应具备：
 
-- 可显式切换四种模式
+- 可显式切换五种模式
 - 可显式跳过 PuLID
 - 可显式跳过 LoRA
 - 可显式跳过 4x 放大
+- 可显式启用 Qwen 换脸后处理
 - 输出节点保持稳定，不因模式变化导致 handler 取错节点
 
 ### workflow 需要具备的分支
@@ -509,6 +568,13 @@
 - 不接 `KSampler(22) -> VAEDecode(23)` 自动姿态预处理
 - 不接 `DepthAnything(10)` 与 `DWPreprocessor(24)` 条件图链路
 - 最终采样器直接使用文本正负提示和基础模型链路出图
+
+#### 分支 7：Qwen 换脸后处理分支
+
+用于模式 E：
+- 基础图先完成 Comfy 生成
+- 再把最终图和参考脸送入 DashScope Qwen 图像编辑接口
+- 输出以 Qwen 返回图为最终图
 
 ## 输出节点要求
 

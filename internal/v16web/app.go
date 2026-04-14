@@ -3,8 +3,12 @@ package v16web
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -55,8 +59,12 @@ type Config struct {
 type GenerateRequest struct {
 	Mode                string       `json:"mode"`
 	ReferenceImage      string       `json:"reference_image"`
+	QwenExtraImage      string       `json:"qwen_extra_image"`
 	PoseImage           string       `json:"pose_image"`
 	Prompt              string       `json:"prompt"`
+	QwenSwapPrompt      string       `json:"qwen_swap_prompt"`
+	QwenModel           string       `json:"qwen_model"`
+	QwenSize            string       `json:"qwen_size"`
 	NegativePrompt      string       `json:"negative_prompt"`
 	Width               int          `json:"width"`
 	Height              int          `json:"height"`
@@ -362,15 +370,22 @@ func (a *App) engine() string {
 
 func (a *App) listCatalog(ctx context.Context, prefix, kind string) []CatalogItem {
 	items := []CatalogItem{}
-	for obj := range a.s3Client.ListObjects(ctx, a.Config.S3Bucket, minio.ListObjectsOptions{
-		Prefix:    prefix,
-		Recursive: false,
-	}) {
-		if obj.Err != nil {
-			log.Printf("catalog list failed for %s: %v", prefix, obj.Err)
-			return nil
-		}
+	if a.Config.S3Endpoint == "" || a.Config.S3AccessKey == "" || a.Config.S3SecretKey == "" || a.Config.S3Bucket == "" {
+		return items
+	}
+
+	result, err := a.s3ListObjectsV2(ctx, prefix)
+	if err != nil {
+		log.Printf("catalog list failed for %s: %v", prefix, err)
+		return items
+	}
+
+	for _, obj := range result.Contents {
 		key := obj.Key
+		// Decode URL-encoded keys (encoding-type=url)
+		if decoded, err := url.QueryUnescape(key); err == nil {
+			key = decoded
+		}
 		if strings.HasSuffix(key, "/") {
 			continue
 		}
@@ -385,6 +400,110 @@ func (a *App) listCatalog(ctx context.Context, prefix, kind string) []CatalogIte
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items
+}
+
+// s3ListObjectsV2Result represents the XML response from S3 ListObjectsV2.
+type s3ListObjectsV2Result struct {
+	XMLName     xml.Name    `xml:"ListBucketResult"`
+	Contents    []s3Object  `xml:"Contents"`
+	IsTruncated bool        `xml:"IsTruncated"`
+}
+
+type s3Object struct {
+	Key  string `xml:"Key"`
+	Size int64  `xml:"Size"`
+}
+
+// s3ListObjectsV2 calls S3 ListObjectsV2 via HTTP with AWS Signature V4,
+// bypassing minio-go which adds encoding-type=url that RunPod S3 doesn't support.
+func (a *App) s3ListObjectsV2(ctx context.Context, prefix string) (*s3ListObjectsV2Result, error) {
+	endpointURL := strings.TrimRight(a.Config.S3Endpoint, "/")
+	region := a.Config.S3Region
+	bucket := a.Config.S3Bucket
+
+	// Build the request URL: <endpoint>/<bucket>?list-type=2&prefix=...
+	query := url.Values{}
+	query.Set("list-type", "2")
+	query.Set("prefix", prefix)
+	query.Set("delimiter", "/")
+	query.Set("max-keys", "1000")
+	query.Set("encoding-type", "url")
+
+	reqURL := fmt.Sprintf("%s/%s?%s", endpointURL, bucket, query.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sign with AWS Signature V4
+	now := time.Now().UTC()
+	dateStamp := now.Format("20060102")
+	amzDate := now.Format("20060102T150405Z")
+
+	req.Header.Set("x-amz-date", amzDate)
+	req.Header.Set("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") // empty body hash
+	req.Header.Set("Host", req.URL.Host)
+
+	// Canonical request
+	canonicalURI := "/" + bucket
+	canonicalQuerystring := query.Encode()
+	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-content-sha256:%s\nx-amz-date:%s\n",
+		req.URL.Host, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", amzDate)
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	payloadHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	canonicalRequest := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
+		"GET", canonicalURI, canonicalQuerystring, canonicalHeaders, signedHeaders, payloadHash)
+
+	// String to sign
+	scope := fmt.Sprintf("%s/%s/s3/aws4_request", dateStamp, region)
+	canonicalRequestHash := sha256Hex([]byte(canonicalRequest))
+	stringToSign := fmt.Sprintf("AWS4-HMAC-SHA256\n%s\n%s\n%s", amzDate, scope, canonicalRequestHash)
+
+	// Signing key
+	kDate := hmacSHA256([]byte("AWS4"+a.Config.S3SecretKey), []byte(dateStamp))
+	kRegion := hmacSHA256(kDate, []byte(region))
+	kService := hmacSHA256(kRegion, []byte("s3"))
+	kSigning := hmacSHA256(kService, []byte("aws4_request"))
+
+	signature := hex.EncodeToString(hmacSHA256(kSigning, []byte(stringToSign)))
+
+	authHeader := fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		a.Config.S3AccessKey, scope, signedHeaders, signature)
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("S3 ListObjectsV2 failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result s3ListObjectsV2Result
+	if err := xml.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("S3 ListObjectsV2 XML parse failed: %v (body: %s)", err, string(body))
+	}
+	return &result, nil
+}
+
+func hmacSHA256(key, data []byte) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write(data)
+	return h.Sum(nil)
+}
+
+func sha256Hex(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }
 
 func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string]interface{}, []string, error) {
@@ -412,6 +531,10 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		req.EnablePulid = &f
 	}
 	if req.Mode == "text_only" {
+		f := false
+		req.EnablePulid = &f
+	}
+	if req.Mode == "qwen_swap_face" {
 		f := false
 		req.EnablePulid = &f
 	}
@@ -453,7 +576,7 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		delete(nodes, "22")
 		delete(nodes, "23")
 		delete(nodes, "27")
-	} else if req.Mode == "text_only" {
+	} else if req.Mode == "text_only" || req.Mode == "qwen_swap_face" {
 		nodes["14"]["inputs"].(map[string]interface{})["positive"] = []interface{}{"2", 0}
 		nodes["14"]["inputs"].(map[string]interface{})["negative"] = []interface{}{"3", 0}
 		delete(nodes, "4")
@@ -473,6 +596,9 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		delete(nodes, "27")
 		delete(nodes, "28")
 		delete(nodes, "29")
+	}
+	if req.Mode == "qwen_swap_face" {
+		warnings = append(warnings, "qwen_swap_face is a post-process DashScope face swap after base text-only generation")
 	}
 
 	if req.Width > 0 {
@@ -554,6 +680,9 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 
 func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*GenerateResponse, error) {
 	req = normalizeRequest(req)
+	if req.Mode == "qwen_swap_face" {
+		return nil, errors.New("qwen_swap_face is supported via the RunPod engine path only")
+	}
 	rendered, warnings, err := a.renderWorkflow(req, true)
 	if err != nil {
 		return nil, err
@@ -565,6 +694,9 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 			return nil, err
 		}
 		rendered["7"].(map[string]interface{})["inputs"].(map[string]interface{})["image"] = name
+	}
+	if req.QwenExtraImage != "" {
+		warnings = append(warnings, "qwen_extra_image is ignored by the Comfy workflow preview and only used by the DashScope post-process")
 	}
 	if req.PoseImage != "" {
 		name, err := a.uploadMediaToComfy(ctx, req.PoseImage, "pose")
@@ -639,6 +771,10 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"mode":                   req.Mode,
 		"reference_image":        req.ReferenceImage,
 		"prompt":                 req.Prompt,
+	"qwen_swap_prompt":       req.QwenSwapPrompt,
+	"qwen_model":             req.QwenModel,
+	"qwen_size":              req.QwenSize,
+	"qwen_extra_image":       req.QwenExtraImage,
 		"negative_prompt":        req.NegativePrompt,
 		"width":                  req.Width,
 		"height":                 req.Height,
@@ -916,13 +1052,24 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.PulidStartAt = clampDefault(req.PulidStartAt, 0.5)
 	req.PulidEndAt = clampDefault(req.PulidEndAt, 1)
 	req.PulidMethod = firstNonEmpty(req.PulidMethod, "fidelity")
+	req.QwenSwapPrompt = firstNonEmpty(req.QwenSwapPrompt, "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。")
+	req.QwenModel = firstNonEmpty(req.QwenModel, "qwen-image-edit-max")
+	req.QwenSize = strings.TrimSpace(req.QwenSize)
+	req.QwenExtraImage = strings.TrimSpace(req.QwenExtraImage)
 	req.CKPTName = firstNonEmpty(req.CKPTName, "SDXL_Photorealistic_Mix_nsfw.safetensors")
 	req.UpscaleModelName = firstNonEmpty(req.UpscaleModelName, "4x-UltraSharp.pth")
 	req.OutputFormat = firstNonEmpty(req.OutputFormat, "jpg")
 	req.JPGQuality = firstPositive(req.JPGQuality, 85)
 	if req.EnablePulid == nil {
 		b := req.Mode != "pose_only" && req.Mode != "text_only"
+		if req.Mode == "qwen_swap_face" {
+			b = false
+		}
 		req.EnablePulid = &b
+	}
+	if req.Mode == "qwen_swap_face" {
+		f := false
+		req.EnablePulid = &f
 	}
 	if req.EnableLora == nil {
 		b := len(req.Loras) > 0
@@ -941,7 +1088,7 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 
 func normalizeMode(mode, referenceImage, poseImage string) string {
 	switch strings.TrimSpace(mode) {
-	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only":
+	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face":
 		return strings.TrimSpace(mode)
 	}
 	if strings.TrimSpace(referenceImage) == "" && strings.TrimSpace(poseImage) == "" {
@@ -972,6 +1119,10 @@ func validateRequest(req GenerateRequest, requireMedia bool) error {
 	case "pose_only":
 		if req.PoseImage == "" && requireMedia {
 			return errors.New("pose_image is required for pose_only")
+		}
+	case "qwen_swap_face":
+		if req.ReferenceImage == "" && requireMedia {
+			return errors.New("reference_image is required for qwen_swap_face")
 		}
 	case "text_only":
 		// prompt-only mode

@@ -37,6 +37,28 @@ MODEL_KIND_TO_FOLDER = {
     "upscale_model": "upscale_models",
 }
 
+QWEN_API_URL = os.getenv(
+    "DASHSCOPE_API_URL",
+    os.getenv(
+        "DASHSCOPE_BASE_URL",
+        "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    ),
+)
+QWEN_MODEL = os.getenv("DASHSCOPE_MODEL", "qwen-image-edit-max")
+QWEN_DATA_INSPECTION = os.getenv(
+    "DASHSCOPE_DATA_INSPECTION_HEADER",
+    '{"input":"disable", "output": "disable"}',
+)
+QWEN_DEFAULT_SWAP_PROMPT = "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
+
+
+def _first_env(*names: str, default: str = "") -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return default
+
 
 def _load_key_env_file() -> None:
     if not KEY_ENV_FILE:
@@ -93,6 +115,67 @@ def resolve_media_to_comfy_filename(media: str, prefix: str) -> str:
     return _decode_base64_to_input(media, prefix)
 
 
+def _decode_media_bytes(media: str) -> Tuple[bytes, str]:
+    if media.startswith("http://") or media.startswith("https://"):
+        r = requests.get(media, timeout=60)
+        r.raise_for_status()
+        content_type = r.headers.get("content-type", "")
+        return r.content, content_type
+    raw = media
+    content_type = ""
+    if media.startswith("data:") and "," in media:
+        header, raw = media.split(",", 1)
+        content_type = header[5:].replace(";base64", "")
+    blob = base64.b64decode(raw)
+    return blob, content_type
+
+
+def _fit_image_for_qwen(image: Image.Image, max_side: int = 2048, min_side: int = 512) -> Image.Image:
+    img = image.convert("RGB")
+    w, h = img.size
+    scale = min(max_side / max(w, h), 1.0)
+    if min(w, h) < min_side:
+        min_scale = min_side / min(w, h)
+        if max(w, h) * min_scale <= max_side:
+            scale = max(scale, min_scale)
+    if abs(scale - 1.0) < 1e-6:
+        return img
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    return img.resize((new_w, new_h), Image.LANCZOS)
+
+
+def _media_to_qwen_data_url(media: str) -> Tuple[str, Tuple[int, int]]:
+    blob, _ = _decode_media_bytes(media)
+    img = Image.open(io.BytesIO(blob))
+    img = _fit_image_for_qwen(img)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}", img.size
+
+
+def _image_bytes_to_qwen_data_url(blob: bytes) -> Tuple[str, Tuple[int, int]]:
+    img = Image.open(io.BytesIO(blob))
+    img = _fit_image_for_qwen(img)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}", img.size
+
+
+def _write_output_bytes(filename: str, blob: bytes) -> Path:
+    COMFY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = COMFY_OUTPUT_DIR / filename
+    path.write_bytes(blob)
+    return path
+
+
+def _upload_bytes_to_r2(s3_client, cfg: Dict, key: str, data: bytes, content_type: str) -> str:
+    s3_client.put_object(Bucket=cfg["bucket"], Key=key, Body=data, ContentType=content_type)
+    return f"{cfg['public_url']}/{key}"
+
+
 def _local_model_path(kind: str, name: str) -> Path:
     folder = MODEL_KIND_TO_FOLDER[kind]
     return COMFY_ROOT / "models" / folder / name
@@ -110,19 +193,28 @@ def _model_s3_key(kind: str, name: str) -> str:
 def _model_sync_client_and_cfg():
     if not MODEL_SYNC_ENABLED:
         return None, None
-    if not (MODEL_S3_ACCESS_KEY and MODEL_S3_SECRET_KEY and MODEL_S3_BUCKET and MODEL_S3_ENDPOINT):
+    access_key = _first_env("MODEL_S3_ACCESS_KEY_ID", "S3_ACCESS_KEY_ID", "R2_ACCESS_KEY", "AWS_ACCESS_KEY_ID")
+    secret_key = _first_env("MODEL_S3_SECRET_ACCESS_KEY", "S3_SECRET_ACCESS_KEY", "R2_SECRET_KEY", "AWS_SECRET_ACCESS_KEY")
+    bucket = _first_env("MODEL_S3_BUCKET", "S3_BUCKET", "R2_BUCKET")
+    endpoint = _first_env("MODEL_S3_ENDPOINT_URL", "S3_ENDPOINT_URL", "R2_ENDPOINT")
+    region = _first_env("MODEL_S3_REGION", "S3_REGION", "R2_REGION", default="eu-ro-1")
+    root_prefix = _first_env("MODEL_S3_ROOT_PREFIX", "S3_MODEL_ROOT_PREFIX", default="runpod-slim/ComfyUI/models").strip("/")
+    account_id = _first_env("R2_ACCOUNT_ID")
+    if not endpoint and account_id:
+        endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
+    if not (access_key and secret_key and bucket and endpoint):
         return None, None
-    endpoint = MODEL_S3_ENDPOINT.rstrip("/")
+    endpoint = endpoint.rstrip("/")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
-        aws_access_key_id=MODEL_S3_ACCESS_KEY,
-        aws_secret_access_key=MODEL_S3_SECRET_KEY,
-        region_name=MODEL_S3_REGION,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
     )
     return s3, {
-        "bucket": MODEL_S3_BUCKET,
-        "root_prefix": MODEL_S3_ROOT_PREFIX,
+        "bucket": bucket,
+        "root_prefix": root_prefix,
         "endpoint": endpoint,
     }
 
@@ -357,6 +449,10 @@ def normalize_input(input_data: Dict) -> Dict:
     data.setdefault("pulid_weight", 0.7)
     data.setdefault("pulid_start_at", 0.5)
     data.setdefault("pulid_end_at", 1.0)
+    data.setdefault("qwen_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)
+    data.setdefault("qwen_model", QWEN_MODEL)
+    data.setdefault("qwen_size", "")
+    data.setdefault("qwen_extra_image", "")
     data.setdefault("cn_depth_strength", 0.6)
     data.setdefault("cn_depth_start_percent", 0.0)
     data.setdefault("cn_depth_end_percent", 1.0)
@@ -368,7 +464,9 @@ def normalize_input(input_data: Dict) -> Dict:
         data["enable_upscale"] = bool(data.get("use_upscale"))
     data.setdefault("enable_upscale", False)
     if "enable_pulid" not in data:
-        data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only"}
+        data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only", "qwen_swap_face"}
+    if data["mode"] == "qwen_swap_face":
+        data["enable_pulid"] = False
     if "enable_lora" not in data:
         data["enable_lora"] = bool(data.get("loras"))
     return data
@@ -389,6 +487,9 @@ def validate_input(input_data: Dict) -> None:
             raise RuntimeError("pose_image is required for pose_only")
     elif mode == "text_only":
         pass
+    elif mode == "qwen_swap_face":
+        if "reference_image" not in input_data:
+            raise RuntimeError("reference_image is required for qwen_swap_face")
     else:
         raise RuntimeError(f"Unsupported mode: {mode}")
     if not str(input_data.get("prompt", "")).strip():
@@ -434,7 +535,9 @@ def prune_nodes(prompt: Dict, node_ids: Tuple[str, ...]) -> None:
 
 def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     mode = input_data["mode"]
-    enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only"}))
+    enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only", "qwen_swap_face"}))
+    if mode == "qwen_swap_face":
+        enable_pulid = False
     uses_external_pose = False
     if mode == "dual_pass_auto_pose":
         set_pose_branch(prompt, False)
@@ -443,7 +546,7 @@ def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
         set_pose_branch(prompt, True)
         uses_external_pose = True
         prune_nodes(prompt, ("22", "23", "27"))
-    elif mode == "text_only":
+    elif mode == "text_only" or mode == "qwen_swap_face":
         prompt["14"]["inputs"]["positive"] = ["2", 0]
         prompt["14"]["inputs"]["negative"] = ["3", 0]
         prune_nodes(prompt, ("4", "5", "6", "7", "8", "9", "10", "11", "12", "22", "23", "24", "25", "26", "27", "28", "29"))
@@ -532,6 +635,8 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     if "8" in prompt:
         prompt["8"]["inputs"]["model"] = model_source
     enable_pulid = bool(input_data.get("enable_pulid", True))
+    if input_data.get("mode") == "qwen_swap_face":
+        enable_pulid = False
     prompt["14"]["inputs"]["model"] = ["8", 0] if enable_pulid else model_source
     if not enable_lora:
         prune_nodes(prompt, ("17",))
@@ -618,6 +723,81 @@ def _convert_to_jpg_bytes(image_bytes: bytes, quality: int = 85) -> bytes:
     return buf.getvalue()
 
 
+def _extract_dashscope_image_url(resp_json: Dict) -> str:
+    output = resp_json.get("output", {}) if isinstance(resp_json, dict) else {}
+    choices = output.get("choices", []) if isinstance(output, dict) else []
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message", {})
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if isinstance(item, dict):
+                image_url = str(item.get("image", "")).strip()
+                if image_url:
+                    return image_url
+    raise RuntimeError(f"DashScope response missing image URL: {json.dumps(resp_json, ensure_ascii=False)[:4000]}")
+
+
+def _call_qwen_face_swap(
+    reference_media: str,
+    base_image_bytes: bytes,
+    extra_media: str,
+    swap_prompt: str,
+    negative_prompt: str,
+    model: str,
+    size_override: str = "",
+) -> bytes:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("DASHSCOPE_API_KEY is required for qwen_swap_face mode")
+    reference_input, ref_size = _media_to_qwen_data_url(reference_media)
+    base_input, base_size = _image_bytes_to_qwen_data_url(base_image_bytes)
+    size = size_override.strip() or f"{base_size[0]}*{base_size[1]}"
+    extra_input = ""
+    if extra_media.strip():
+        extra_input, _ = _media_to_qwen_data_url(extra_media)
+    payload = {
+        "model": model or QWEN_MODEL,
+        "input": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": base_input},
+                        {"image": reference_input},
+                        *([{"image": extra_input}] if extra_input else []),
+                        {"text": swap_prompt or QWEN_DEFAULT_SWAP_PROMPT},
+                    ],
+                }
+            ]
+        },
+        "parameters": {
+            "n": 1,
+            "negative_prompt": negative_prompt or " ",
+            "prompt_extend": False,
+            "watermark": False,
+            "size": size,
+        },
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "X-DashScope-DataInspection": QWEN_DATA_INSPECTION,
+    }
+    resp = requests.post(QWEN_API_URL, json=payload, headers=headers, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+    image_url = _extract_dashscope_image_url(data)
+    img_resp = requests.get(image_url, timeout=120)
+    img_resp.raise_for_status()
+    return img_resp.content
+
+
 def get_r2_client_and_config():
     access_key = os.getenv("R2_ACCESS_KEY", "")
     secret_key = os.getenv("R2_SECRET_KEY", "")
@@ -698,7 +878,7 @@ def handler(event: Dict) -> Dict:
     apply_v3_defaults(prompt, v3)
 
     ref_value = data.get("reference_image")
-    if ref_value:
+    if ref_value and data["mode"] != "qwen_swap_face":
         ref_filename = resolve_media_to_comfy_filename(ref_value, "reference")
         prompt["7"]["inputs"]["image"] = ref_filename
 
@@ -724,6 +904,31 @@ def handler(event: Dict) -> Dict:
             "history_debug": _summarize_history(history_obj),
         }
 
+    qwen_mode = data["mode"] == "qwen_swap_face"
+    qwen_swap_prompt = str(data.get("qwen_swap_prompt", "")).strip()
+    qwen_model = str(data.get("qwen_model", QWEN_MODEL)).strip() or QWEN_MODEL
+    qwen_size = str(data.get("qwen_size", "")).strip()
+    qwen_extra_image = str(data.get("qwen_extra_image", "")).strip()
+    if qwen_mode:
+        if keep_intermediate:
+            intermediate_images = list(final_images) + list(intermediate_images)
+        qwen_final_images: List[Dict] = []
+        for idx, img_desc in enumerate(final_images, start=1):
+            base_raw = _read_output_image(img_desc)
+            qwen_raw = _call_qwen_face_swap(
+                ref_value,
+                base_raw,
+                qwen_extra_image,
+                qwen_swap_prompt,
+                str(data.get("negative_prompt", "")).strip(),
+                qwen_model,
+                qwen_size,
+            )
+            filename = f"qwen_swap_{request_id}_{idx:02d}.png"
+            _write_output_bytes(filename, qwen_raw)
+            qwen_final_images.append({"filename": filename, "subfolder": "", "type": "output"})
+        final_images = qwen_final_images
+
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
         return {
@@ -742,12 +947,12 @@ def handler(event: Dict) -> Dict:
         final_raw = _read_output_image(img_desc)
         final_ext = Path(img_desc["filename"]).suffix.lower() or ".png"
         final_content_type = "image/png" if final_ext == ".png" else "image/jpeg"
-        if use_upscale:
+        if use_upscale and not qwen_mode:
             final_raw = _convert_to_jpg_bytes(final_raw, quality=jpg_quality)
             final_ext = ".jpg"
             final_content_type = "image/jpeg"
         key = f"{s3_cfg['prefix']}/{request_id}/final_{idx:02d}{final_ext}"
-        final_urls.append(upload_bytes_to_r2(s3, s3_cfg, key, final_raw, final_content_type))
+        final_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, final_raw, final_content_type))
     final_url = final_urls[0]
 
     intermediate_urls: List[str] = []
@@ -757,7 +962,7 @@ def handler(event: Dict) -> Dict:
             ext = Path(img_desc["filename"]).suffix.lower() or ".png"
             content_type = "image/png" if ext == ".png" else "image/jpeg"
             key = f"{s3_cfg['prefix']}/{request_id}/intermediate/{idx:02d}_{img_desc['filename']}"
-            intermediate_urls.append(upload_bytes_to_r2(s3, s3_cfg, key, raw, content_type))
+            intermediate_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, raw, content_type))
 
     return {
         "ok": True,
@@ -770,11 +975,18 @@ def handler(event: Dict) -> Dict:
         "synced_models": synced_models,
         "meta": {
             "mode": data["mode"],
-            "pose_mode": "external_pose" if has_pose else ("text_only" if data["mode"] == "text_only" else "dual_pass_auto_pose"),
+            "pose_mode": "external_pose"
+            if has_pose
+            else (
+                "text_only"
+                if data["mode"] == "text_only"
+                else ("qwen_swap_face" if data["mode"] == "qwen_swap_face" else "dual_pass_auto_pose")
+            ),
             "enable_pulid": enable_pulid,
             "enable_lora": bool(data.get("enable_lora")),
             "use_upscale": use_upscale,
-            "final_format": "jpg" if use_upscale else final_ext.lstrip("."),
-            "jpg_quality": jpg_quality if use_upscale else None,
+            "qwen_model": qwen_model if qwen_mode else None,
+            "final_format": "png" if qwen_mode else ("jpg" if use_upscale else final_ext.lstrip(".")),
+            "jpg_quality": jpg_quality if use_upscale and not qwen_mode else None,
         },
     }
