@@ -72,12 +72,7 @@ Notes:
   - `--build-arg BUILD_FULL_PACKAGE=1`
   - optional `--build-arg CIVITAI_TOKEN=<token>`
 - Full packaging downloads models during image build and will be very large.
-- Workflow pushes to GHCR by default.
-- To enable Docker Hub push, set repo secrets:
-  - `DOCKERHUB_USERNAME`
-  - `DOCKERHUB_TOKEN`
-- Docker Hub image path will be:
-  - `docker.io/<DOCKERHUB_USERNAME>/ponyv2:<tag>`
+- Workflow pushes to GHCR only.
 
 ## R2 environment variables
 
