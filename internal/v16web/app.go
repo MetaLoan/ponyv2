@@ -63,6 +63,7 @@ type GenerateRequest struct {
 	PoseImage           string       `json:"pose_image"`
 	Prompt              string       `json:"prompt"`
 	QwenSwapPrompt      string       `json:"qwen_swap_prompt"`
+	QwenEditPrompt      string       `json:"qwen_edit_prompt"`
 	QwenModel           string       `json:"qwen_model"`
 	QwenSize            string       `json:"qwen_size"`
 	NegativePrompt      string       `json:"negative_prompt"`
@@ -546,7 +547,7 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		f := false
 		req.EnablePulid = &f
 	}
-	if req.Mode == "qwen_swap_face" {
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
 		f := false
 		req.EnablePulid = &f
 	}
@@ -588,7 +589,7 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		delete(nodes, "22")
 		delete(nodes, "23")
 		delete(nodes, "27")
-	} else if req.Mode == "text_only" || req.Mode == "qwen_swap_face" {
+	} else if req.Mode == "text_only" || req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
 		nodes["14"]["inputs"].(map[string]interface{})["positive"] = []interface{}{"2", 0}
 		nodes["14"]["inputs"].(map[string]interface{})["negative"] = []interface{}{"3", 0}
 		delete(nodes, "4")
@@ -609,8 +610,8 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		delete(nodes, "28")
 		delete(nodes, "29")
 	}
-	if req.Mode == "qwen_swap_face" {
-		warnings = append(warnings, "qwen_swap_face is a post-process DashScope face swap after base text-only generation")
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+		warnings = append(warnings, req.Mode+" is a post-process DashScope face edit after base generation")
 	}
 
 	if req.Width > 0 {
@@ -692,8 +693,8 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 
 func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*GenerateResponse, error) {
 	req = normalizeRequest(req)
-	if req.Mode == "qwen_swap_face" {
-		return nil, errors.New("qwen_swap_face is supported via the RunPod engine path only")
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+		return nil, errors.New(req.Mode + " is supported via the RunPod engine path only")
 	}
 	rendered, warnings, err := a.renderWorkflow(req, true)
 	if err != nil {
@@ -788,6 +789,7 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"reference_image":        req.ReferenceImage,
 		"prompt":                 req.Prompt,
 		"qwen_swap_prompt":       req.QwenSwapPrompt,
+		"qwen_edit_prompt":       req.QwenEditPrompt,
 		"qwen_model":             req.QwenModel,
 		"qwen_size":              req.QwenSize,
 		"qwen_extra_image":       req.QwenExtraImage,
@@ -1079,6 +1081,7 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.PulidEndAt = clampDefault(req.PulidEndAt, 1)
 	req.PulidMethod = firstNonEmpty(req.PulidMethod, "fidelity")
 	req.QwenSwapPrompt = firstNonEmpty(req.QwenSwapPrompt, "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。")
+	req.QwenEditPrompt = firstNonEmpty(req.QwenEditPrompt, "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}")
 	req.QwenModel = firstNonEmpty(req.QwenModel, "qwen-image-edit-max")
 	req.QwenSize = strings.TrimSpace(req.QwenSize)
 	req.QwenExtraImage = strings.TrimSpace(req.QwenExtraImage)
@@ -1094,12 +1097,12 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.I2VAudioURL = strings.TrimSpace(req.I2VAudioURL)
 	if req.EnablePulid == nil {
 		b := req.Mode != "pose_only" && req.Mode != "text_only"
-		if req.Mode == "qwen_swap_face" {
+		if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
 			b = false
 		}
 		req.EnablePulid = &b
 	}
-	if req.Mode == "qwen_swap_face" {
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
 		f := false
 		req.EnablePulid = &f
 	}
@@ -1132,7 +1135,7 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 
 func normalizeMode(mode, referenceImage, poseImage string) string {
 	switch strings.TrimSpace(mode) {
-	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face":
+	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face", "qwen_edit_face":
 		return strings.TrimSpace(mode)
 	}
 	if strings.TrimSpace(referenceImage) == "" && strings.TrimSpace(poseImage) == "" {
@@ -1168,6 +1171,8 @@ func validateRequest(req GenerateRequest, requireMedia bool) error {
 		if req.ReferenceImage == "" && requireMedia {
 			return errors.New("reference_image is required for qwen_swap_face")
 		}
+	case "qwen_edit_face":
+		// prompt-guided Qwen edit uses the generated image as the base input.
 	case "text_only":
 		// prompt-only mode
 	default:

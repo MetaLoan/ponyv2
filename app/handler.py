@@ -50,6 +50,7 @@ QWEN_DATA_INSPECTION = os.getenv(
     '{"input":"disable", "output": "disable"}',
 )
 QWEN_DEFAULT_SWAP_PROMPT = "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
+QWEN_DEFAULT_EDIT_PROMPT = "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}"
 I2V_API_URL = os.getenv(
     "DASHSCOPE_I2V_API_URL",
     os.getenv(
@@ -460,6 +461,7 @@ def normalize_input(input_data: Dict) -> Dict:
     data.setdefault("pulid_start_at", 0.5)
     data.setdefault("pulid_end_at", 1.0)
     data.setdefault("qwen_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)
+    data.setdefault("qwen_edit_prompt", QWEN_DEFAULT_EDIT_PROMPT)
     data.setdefault("qwen_model", QWEN_MODEL)
     data.setdefault("qwen_size", "")
     data.setdefault("qwen_extra_image", "")
@@ -484,8 +486,8 @@ def normalize_input(input_data: Dict) -> Dict:
         data["enable_upscale"] = bool(data.get("use_upscale"))
     data.setdefault("enable_upscale", False)
     if "enable_pulid" not in data:
-        data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only", "qwen_swap_face"}
-    if data["mode"] == "qwen_swap_face":
+        data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only", "qwen_swap_face", "qwen_edit_face"}
+    if data["mode"] in {"qwen_swap_face", "qwen_edit_face"}:
         data["enable_pulid"] = False
     if "enable_lora" not in data:
         data["enable_lora"] = bool(data.get("loras"))
@@ -510,6 +512,8 @@ def validate_input(input_data: Dict) -> None:
     elif mode == "qwen_swap_face":
         if "reference_image" not in input_data:
             raise RuntimeError("reference_image is required for qwen_swap_face")
+    elif mode == "qwen_edit_face":
+        pass
     else:
         raise RuntimeError(f"Unsupported mode: {mode}")
     if not str(input_data.get("prompt", "")).strip():
@@ -555,8 +559,8 @@ def prune_nodes(prompt: Dict, node_ids: Tuple[str, ...]) -> None:
 
 def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     mode = input_data["mode"]
-    enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only", "qwen_swap_face"}))
-    if mode == "qwen_swap_face":
+    enable_pulid = bool(input_data.get("enable_pulid", mode not in {"pose_only", "text_only", "qwen_swap_face", "qwen_edit_face"}))
+    if mode in {"qwen_swap_face", "qwen_edit_face"}:
         enable_pulid = False
     uses_external_pose = False
     if mode == "dual_pass_auto_pose":
@@ -566,7 +570,7 @@ def apply_mode(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
         set_pose_branch(prompt, True)
         uses_external_pose = True
         prune_nodes(prompt, ("22", "23", "27"))
-    elif mode == "text_only" or mode == "qwen_swap_face":
+    elif mode == "text_only" or mode in {"qwen_swap_face", "qwen_edit_face"}:
         prompt["14"]["inputs"]["positive"] = ["2", 0]
         prompt["14"]["inputs"]["negative"] = ["3", 0]
         prune_nodes(prompt, ("4", "5", "6", "7", "8", "9", "10", "11", "12", "22", "23", "24", "25", "26", "27", "28", "29"))
@@ -655,12 +659,14 @@ def apply_overrides(prompt: Dict, input_data: Dict) -> Tuple[bool, bool]:
     if "8" in prompt:
         prompt["8"]["inputs"]["model"] = model_source
     enable_pulid = bool(input_data.get("enable_pulid", True))
-    if input_data.get("mode") == "qwen_swap_face":
+    if input_data.get("mode") in {"qwen_swap_face", "qwen_edit_face"}:
         enable_pulid = False
     prompt["14"]["inputs"]["model"] = ["8", 0] if enable_pulid else model_source
     if not enable_lora:
         prune_nodes(prompt, ("17",))
     if not enable_pulid:
+        prune_nodes(prompt, ("4", "5", "6", "7", "8"))
+    if input_data.get("mode") == "qwen_edit_face":
         prune_nodes(prompt, ("4", "5", "6", "7", "8"))
 
     use_upscale = bool(input_data.get("enable_upscale", input_data.get("use_upscale", False)))
@@ -763,6 +769,14 @@ def _extract_dashscope_image_url(resp_json: Dict) -> str:
     raise RuntimeError(f"DashScope response missing image URL: {json.dumps(resp_json, ensure_ascii=False)[:4000]}")
 
 
+def _resolve_qwen_edit_prompt(template: str, prompt_text: str) -> str:
+    source = template or QWEN_DEFAULT_EDIT_PROMPT
+    source = source.replace("{{prompt}}", prompt_text)
+    source = source.replace("{{生图提示词的主提示词变量}}", prompt_text)
+    source = source.replace("{{生成提示词的主提示词变量}}", prompt_text)
+    return source
+
+
 def _call_qwen_face_swap(
     reference_media: str,
     base_image_bytes: bytes,
@@ -774,25 +788,27 @@ def _call_qwen_face_swap(
 ) -> bytes:
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
     if not api_key:
-        raise RuntimeError("DASHSCOPE_API_KEY is required for qwen_swap_face mode")
-    reference_input, ref_size = _media_to_qwen_data_url(reference_media)
+        raise RuntimeError("DASHSCOPE_API_KEY is required for qwen face edit/swap modes")
+    reference_input = ""
+    if reference_media.strip():
+        reference_input, _ = _media_to_qwen_data_url(reference_media)
     base_input, base_size = _image_bytes_to_qwen_data_url(base_image_bytes)
     size = size_override.strip() or f"{base_size[0]}*{base_size[1]}"
     extra_input = ""
     if extra_media.strip():
         extra_input, _ = _media_to_qwen_data_url(extra_media)
+    content = [{"image": base_input}]
+    if reference_input:
+        content.append({"image": reference_input})
+    if extra_input:
+        content.append({"image": extra_input})
     payload = {
         "model": model or QWEN_MODEL,
         "input": {
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"image": base_input},
-                        {"image": reference_input},
-                        *([{"image": extra_input}] if extra_input else []),
-                        {"text": swap_prompt or QWEN_DEFAULT_SWAP_PROMPT},
-                    ],
+                    "content": [*content, {"text": swap_prompt or QWEN_DEFAULT_SWAP_PROMPT}],
                 }
             ]
         },
@@ -847,7 +863,8 @@ def _submit_and_wait_dashscope_i2v(payload: Dict, api_key: str, api_url: str) ->
         "X-DashScope-DataInspection": I2V_DATA_INSPECTION,
     }
     resp = requests.post(api_url, json=payload, headers=headers, timeout=300)
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        raise RuntimeError(f"DashScope i2v submit failed: status={resp.status_code}, body={resp.text[:4000]}")
     data = resp.json()
     task_id = str(data.get("output", {}).get("task_id", "")).strip()
     if not task_id:
@@ -1027,7 +1044,7 @@ def handler(event: Dict) -> Dict:
     apply_v3_defaults(prompt, v3)
 
     ref_value = data.get("reference_image")
-    if ref_value and data["mode"] != "qwen_swap_face":
+    if ref_value and data["mode"] not in {"qwen_swap_face", "qwen_edit_face"}:
         ref_filename = resolve_media_to_comfy_filename(ref_value, "reference")
         prompt["7"]["inputs"]["image"] = ref_filename
 
@@ -1053,8 +1070,9 @@ def handler(event: Dict) -> Dict:
             "history_debug": _summarize_history(history_obj),
         }
 
-    qwen_mode = data["mode"] == "qwen_swap_face"
+    qwen_mode = data["mode"] in {"qwen_swap_face", "qwen_edit_face"}
     qwen_swap_prompt = str(data.get("qwen_swap_prompt", "")).strip()
+    qwen_edit_prompt = str(data.get("qwen_edit_prompt", "")).strip()
     qwen_model = str(data.get("qwen_model", QWEN_MODEL)).strip() or QWEN_MODEL
     qwen_size = str(data.get("qwen_size", "")).strip()
     qwen_extra_image = str(data.get("qwen_extra_image", "")).strip()
@@ -1065,10 +1083,10 @@ def handler(event: Dict) -> Dict:
         for idx, img_desc in enumerate(final_images, start=1):
             base_raw = _read_output_image(img_desc)
             qwen_raw = _call_qwen_face_swap(
-                ref_value,
+                "" if data["mode"] == "qwen_edit_face" else ref_value,
                 base_raw,
-                qwen_extra_image,
-                qwen_swap_prompt,
+                "" if data["mode"] == "qwen_edit_face" else qwen_extra_image,
+                _resolve_qwen_edit_prompt(qwen_edit_prompt, str(data.get("prompt", "")).strip()) if data["mode"] == "qwen_edit_face" else qwen_swap_prompt,
                 str(data.get("negative_prompt", "")).strip(),
                 qwen_model,
                 qwen_size,
@@ -1179,12 +1197,17 @@ def handler(event: Dict) -> Dict:
             else (
                 "text_only"
                 if data["mode"] == "text_only"
-                else ("qwen_swap_face" if data["mode"] == "qwen_swap_face" else "dual_pass_auto_pose")
+                else (
+                    "qwen_swap_face"
+                    if data["mode"] == "qwen_swap_face"
+                    else ("qwen_edit_face" if data["mode"] == "qwen_edit_face" else "dual_pass_auto_pose")
+                )
             ),
             "enable_pulid": enable_pulid,
             "enable_lora": bool(data.get("enable_lora")),
             "use_upscale": use_upscale,
             "qwen_model": qwen_model if qwen_mode else None,
+            "qwen_edit_prompt": qwen_edit_prompt if data["mode"] == "qwen_edit_face" else None,
             "i2v": {
                 "enabled": i2v_enabled,
                 "model": i2v_model if i2v_enabled else None,

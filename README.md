@@ -94,11 +94,11 @@ Style B:
 
 When both are present, `R2_ENDPOINT` is used first. `R2_PUBLIC_URL` must be the public CDN/base URL used in returned file URLs.
 
-## Qwen face-swap env vars
+## Qwen edit/swap env vars
 
-The RunPod handler supports a post-process face swap mode backed by DashScope Qwen image edit.
+The RunPod handler supports post-process Qwen image edit modes for both face swap and prompt-driven face edit.
 
-Required for `mode=qwen_swap_face`:
+Required for `mode=qwen_swap_face` and `mode=qwen_edit_face`:
 
 - `DASHSCOPE_API_KEY`
 

@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face";
+type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_edit_face";
 
 type CatalogItem = {
   name: string;
@@ -45,6 +45,11 @@ const defaultLora = (): LoraRow => ({
   strength_clip: 0.9,
 });
 
+const DEFAULT_QWEN_SWAP_PROMPT =
+  "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。";
+const DEFAULT_QWEN_EDIT_PROMPT =
+  "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}";
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [catalog, setCatalog] = useState<CatalogResponse>({
@@ -63,9 +68,8 @@ function App() {
   const [negativePrompt, setNegativePrompt] = useState(
     "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
   );
-  const [qwenSwapPrompt, setQwenSwapPrompt] = useState(
-    "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
-  );
+  const [qwenSwapPrompt, setQwenSwapPrompt] = useState(DEFAULT_QWEN_SWAP_PROMPT);
+  const [qwenEditPrompt, setQwenEditPrompt] = useState(DEFAULT_QWEN_EDIT_PROMPT);
   const [qwenModel, setQwenModel] = useState("qwen-image-edit-max");
   const [qwenSize, setQwenSize] = useState("");
   const [ckptName, setCkptName] = useState("SDXL_Photorealistic_Mix_nsfw.safetensors");
@@ -152,7 +156,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face") {
+    if (mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face" || mode === "qwen_edit_face") {
       setEnablePulid(false);
     } else if (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap") {
       setEnablePulid(true);
@@ -221,17 +225,22 @@ function App() {
     const referenceImageValue = mediaToPayloadValue(referenceMedia);
     const poseImageValue = mediaToPayloadValue(poseMedia);
     const qwenExtraImageValue = mediaToPayloadValue(qwenExtraMedia);
-    if (referenceImageValue) {
+    if (referenceImageValue && (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face")) {
       body.reference_image = referenceImageValue;
     }
-    if (poseImageValue) {
+    if (poseImageValue && (mode === "pose_then_face_swap" || mode === "pose_only")) {
       body.pose_image = poseImageValue;
     }
-    if (qwenExtraImageValue) {
+    if (qwenExtraImageValue && mode === "qwen_swap_face") {
       body.qwen_extra_image = qwenExtraImageValue;
     }
     if (mode === "qwen_swap_face") {
       body.qwen_swap_prompt = qwenSwapPrompt;
+      body.qwen_model = qwenModel;
+      body.qwen_size = qwenSize;
+    }
+    if (mode === "qwen_edit_face") {
+      body.qwen_edit_prompt = qwenEditPrompt;
       body.qwen_model = qwenModel;
       body.qwen_size = qwenSize;
     }
@@ -240,6 +249,7 @@ function App() {
     mode,
     prompt,
     qwenSwapPrompt,
+    qwenEditPrompt,
     qwenModel,
     qwenSize,
     qwenExtraMedia,
@@ -299,6 +309,7 @@ function App() {
     pose_only: "Pose image + prompt. Pose-guided generation without PuLID face swap.",
     text_only: "Prompt only. No reference image, no pose image, no PuLID.",
     qwen_swap_face: "Base image is generated first, then Qwen uses reference face image and optional image 3 for face swap.",
+    qwen_edit_face: "Base image is generated first, then Qwen edits the face directly from the prompt without a reference face image.",
   }[mode];
 
   async function onRenderWorkflow() {
@@ -401,6 +412,9 @@ function App() {
       }
       if (typeof source.qwen_swap_prompt === "string") {
         setQwenSwapPrompt(source.qwen_swap_prompt);
+      }
+      if (typeof source.qwen_edit_prompt === "string") {
+        setQwenEditPrompt(source.qwen_edit_prompt);
       }
       if (typeof source.qwen_model === "string") {
         setQwenModel(source.qwen_model);
@@ -589,6 +603,7 @@ function App() {
             <option value="pose_only">pose_only: pose-guided only</option>
             <option value="text_only">text_only: prompt only</option>
             <option value="qwen_swap_face">qwen_swap_face: prompt then Qwen face swap</option>
+            <option value="qwen_edit_face">qwen_edit_face: prompt then Qwen face edit</option>
           </select>
           <p className="muted compact">{modeSummary}</p>
         </section>
@@ -611,6 +626,26 @@ function App() {
             onFileChange={(e) => onFileChange("qwenExtra", e)}
             onURLChange={(value) => onURLChange("qwenExtra", value)}
           />
+        )}
+
+        {mode === "qwen_edit_face" && (
+          <section className="card">
+            <h2>Qwen Edit</h2>
+            <div className="stack">
+              <label>
+                Qwen Edit Prompt
+                <textarea rows={4} value={qwenEditPrompt} onChange={(e) => setQwenEditPrompt(e.target.value)} />
+              </label>
+              <label>
+                Qwen Model
+                <input value={qwenModel} onChange={(e) => setQwenModel(e.target.value)} />
+              </label>
+              <label>
+                Qwen Size
+                <input placeholder="1024*1536" value={qwenSize} onChange={(e) => setQwenSize(e.target.value)} />
+              </label>
+            </div>
+          </section>
         )}
 
         {(mode === "pose_then_face_swap" || mode === "pose_only") && (
@@ -834,7 +869,7 @@ function App() {
                 type="checkbox"
                 checked={enablePulid}
                 onChange={(e) => setEnablePulid(e.target.checked)}
-                disabled={mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face"}
+                disabled={mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face" || mode === "qwen_edit_face"}
               />
               Enable PuLID
             </label>
@@ -849,7 +884,7 @@ function App() {
             </div>
           </section>
 
-          {mode !== "text_only" && mode !== "qwen_swap_face" && (
+          {mode !== "text_only" && mode !== "qwen_swap_face" && mode !== "qwen_edit_face" && (
             <section className="card">
               <h2>ControlNet</h2>
               <div className="inline">
@@ -1107,7 +1142,14 @@ function extractImportSource(parsed: unknown): Record<string, unknown> {
 }
 
 function asMode(value: unknown): Mode | undefined {
-  if (value === "dual_pass_auto_pose" || value === "pose_then_face_swap" || value === "pose_only" || value === "text_only" || value === "qwen_swap_face") {
+  if (
+    value === "dual_pass_auto_pose" ||
+    value === "pose_then_face_swap" ||
+    value === "pose_only" ||
+    value === "text_only" ||
+    value === "qwen_swap_face" ||
+    value === "qwen_edit_face"
+  ) {
     return value;
   }
   return undefined;
