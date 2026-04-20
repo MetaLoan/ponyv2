@@ -752,6 +752,7 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 		return nil, err
 	}
 	final, intermediate := collectHistoryImages(history)
+	cacheBust := promptID
 	out := &GenerateResponse{
 		OK:       true,
 		Mode:     req.Mode,
@@ -766,7 +767,7 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 		},
 	}
 	for _, img := range final {
-		url := a.makeLocalComfyViewURL(img)
+		url := a.makeLocalComfyViewURL(img, cacheBust)
 		out.FinalURLs = append(out.FinalURLs, url)
 	}
 	if len(out.FinalURLs) > 0 {
@@ -774,7 +775,7 @@ func (a *App) generateWithComfy(ctx context.Context, req GenerateRequest) (*Gene
 	}
 	if req.KeepIntermediate != nil && *req.KeepIntermediate {
 		for _, img := range intermediate {
-			out.IntermediateURLs = append(out.IntermediateURLs, a.makeLocalComfyViewURL(img))
+			out.IntermediateURLs = append(out.IntermediateURLs, a.makeLocalComfyViewURL(img, cacheBust))
 		}
 	}
 	return out, nil
@@ -913,15 +914,16 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 			if output, ok := data["output"].(map[string]interface{}); ok {
 				out.RequestID = toString(output["request_id"])
 				out.PromptID = toString(output["prompt_id"])
-				out.FinalURL = toString(output["final_url"])
+				cacheBust := firstNonEmpty(out.RequestID, out.JobID, out.PromptID)
+				out.FinalURL = addCacheBust(toString(output["final_url"]), cacheBust)
 				if urls, ok := output["final_urls"].([]interface{}); ok {
 					for _, u := range urls {
-						out.FinalURLs = append(out.FinalURLs, toString(u))
+						out.FinalURLs = append(out.FinalURLs, addCacheBust(toString(u), cacheBust))
 					}
 				}
 				if urls, ok := output["intermediate_urls"].([]interface{}); ok {
 					for _, u := range urls {
-						out.IntermediateURLs = append(out.IntermediateURLs, toString(u))
+						out.IntermediateURLs = append(out.IntermediateURLs, addCacheBust(toString(u), cacheBust))
 					}
 				}
 				out.Meta = map[string]interface{}{
@@ -989,7 +991,7 @@ func collectNodeImages(outputs map[string]interface{}, nodeID string) []comfyIma
 	return imgs
 }
 
-func (a *App) makeLocalComfyViewURL(img comfyImage) string {
+func (a *App) makeLocalComfyViewURL(img comfyImage, cacheBust string) string {
 	values := url.Values{}
 	values.Set("filename", img.Filename)
 	if img.Subfolder != "" {
@@ -1000,7 +1002,25 @@ func (a *App) makeLocalComfyViewURL(img comfyImage) string {
 	} else {
 		values.Set("type", "output")
 	}
-	return "/api/comfy/view?" + values.Encode()
+	return addCacheBust("/api/comfy/view?"+values.Encode(), cacheBust)
+}
+
+func addCacheBust(rawURL, cacheBust string) string {
+	if rawURL == "" || cacheBust == "" {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		sep := "?"
+		if strings.Contains(rawURL, "?") {
+			sep = "&"
+		}
+		return rawURL + sep + "v=" + url.QueryEscape(cacheBust)
+	}
+	q := parsed.Query()
+	q.Set("v", cacheBust)
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
 }
 
 func (a *App) uploadMediaToComfy(ctx context.Context, media, prefix string) (string, error) {

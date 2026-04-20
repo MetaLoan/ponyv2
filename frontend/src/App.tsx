@@ -130,7 +130,11 @@ function App() {
   useEffect(() => {
     void (async () => {
       const healthResp = await fetch("/api/health");
-      const healthJson = (await healthResp.json()) as HealthResponse;
+      const healthText = await healthResp.text();
+      if (!healthText.trim()) {
+        throw new Error("Empty /api/health response");
+      }
+      const healthJson = JSON.parse(healthText) as HealthResponse;
       setHealth(healthJson);
 
       const catalogResp = await fetch("/api/models/catalog");
@@ -139,7 +143,12 @@ function App() {
         setCatalogError(text);
         return;
       }
-      const catalogJson = (await catalogResp.json()) as CatalogResponse;
+      const catalogText = await catalogResp.text();
+      if (!catalogText.trim()) {
+        setCatalogError("Empty /api/models/catalog response");
+        return;
+      }
+      const catalogJson = JSON.parse(catalogText) as CatalogResponse;
       setCatalog(catalogJson);
       if (catalogJson?.checkpoints?.[0] && !ckptName) {
         setCkptName(catalogJson.checkpoints[0].name);
