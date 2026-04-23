@@ -780,16 +780,42 @@ def validate_required_node_types(prompt: Dict) -> None:
         )
 
 
-def wait_history(prompt_id: str, timeout_sec: int = 1200) -> Dict:
+def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None) -> Dict:
     deadline = time.time() + timeout_sec
-    while time.time() < deadline:
-        r = requests.get(f"{COMFY_API_URL}/history/{prompt_id}", timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        if prompt_id in data and data[prompt_id].get("outputs"):
-            return data[prompt_id]
-        time.sleep(1.5)
-    raise TimeoutError(f"Timed out waiting for prompt {prompt_id}")
+    log_file = Path("/tmp/comfy.log")
+    f = None
+    try:
+        import runpod
+    except ImportError:
+        runpod = None
+
+    if event is not None and log_file.exists() and runpod:
+        try:
+            f = log_file.open("r", encoding="utf-8")
+            f.seek(0, 2)
+        except Exception:
+            f = None
+
+    try:
+        while time.time() < deadline:
+            r = requests.get(f"{COMFY_API_URL}/history/{prompt_id}", timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            if prompt_id in data and data[prompt_id].get("outputs"):
+                return data[prompt_id]
+            
+            if f and runpod:
+                try:
+                    new_lines = f.read()
+                    if new_lines:
+                        runpod.serverless.progress_update(event, {"logs": new_lines})
+                except Exception:
+                    pass
+            time.sleep(1.5)
+        raise TimeoutError(f"Timed out waiting for prompt {prompt_id}")
+    finally:
+        if f:
+            f.close()
 
 
 def _read_output_image(image_desc: Dict) -> bytes:
@@ -1273,7 +1299,7 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
         prompt["47"]["inputs"]["filename_prefix"] = f"wan_{data.get('request_id', 'wan')}_{segment_idx:02d}"
 
 
-def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str) -> Dict:
+def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dict = None) -> Dict:
     if not WAN_WORKFLOW_API_PATH.exists():
         raise RuntimeError(f"WAN workflow template not found: {WAN_WORKFLOW_API_PATH}")
     if str(data.get("endimg", "")).strip():
@@ -1316,7 +1342,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str) -> Dict:
 
         validate_required_node_types(prompt)
         prompt_id = queue_prompt(prompt)
-        history_obj = wait_history(prompt_id)
+        history_obj = wait_history(prompt_id, event=event)
         frame_images = _collect_node_images(history_obj, "47")
         if not frame_images:
             raise RuntimeError(f"No frames produced for WAN segment {idx + 1}")
@@ -1575,7 +1601,7 @@ def handler(event: Dict) -> Dict:
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
         if _wan_use_comfy_backend(data):
             try:
-                return _generate_wan_extend_any_frame_comfy(data, request_id)
+                return _generate_wan_extend_any_frame_comfy(data, request_id, event=event)
             except Exception as exc:
                 raise RuntimeError(f"WAN comfy backend failed: {exc}") from exc
         return _generate_wan_extend_any_frame(data, request_id)
@@ -1601,7 +1627,7 @@ def handler(event: Dict) -> Dict:
 
     validate_required_node_types(prompt)
     prompt_id = queue_prompt(prompt)
-    history_obj = wait_history(prompt_id)
+    history_obj = wait_history(prompt_id, event=event)
     final_images, intermediate_images = collect_output_images(history_obj)
     if not final_images:
         return {

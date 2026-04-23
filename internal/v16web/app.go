@@ -1793,7 +1793,7 @@ func clampDefault(v, fallback float64) float64 {
 func isAllowedModelFile(name, kind string) bool {
 	lower := strings.ToLower(name)
 	switch kind {
-	case "checkpoint", "lora":
+	case "checkpoint", "lora", "unet":
 		return strings.HasSuffix(lower, ".safetensors") || strings.HasSuffix(lower, ".ckpt")
 	case "upscale_model":
 		return strings.HasSuffix(lower, ".pth") || strings.HasSuffix(lower, ".pt")

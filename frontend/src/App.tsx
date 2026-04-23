@@ -172,7 +172,7 @@ function App() {
     "保持主体一致，生成自然流畅、镜头稳定、画面连贯的动态视频，动作真实，细节清晰，电影感自然。"
   );
   const [i2vModel, setI2VModel] = useState("wan2.7-i2v");
-  const [i2vResolution, setI2VResolution] = useState("1080P");
+  const [i2vResolution, setI2VResolution] = useState("720P");
   const [i2vDuration, setI2VDuration] = useState(5);
   const [i2vSeed, setI2VSeed] = useState<number>(12345);
   const [i2vNegativePrompt, setI2VNegativePrompt] = useState(
@@ -351,9 +351,10 @@ function App() {
       body.wan_clip_vision_name = wanClipVisionName;
       body.wan_clip_name = wanClipName;
       body.i2v_resolution = i2vResolution;
-      body.i2v_audio_url = i2vAudioURL;
-      body.i2v_prompt_extend = i2vPromptExtend;
-      body.i2v_watermark = i2vWatermark;
+      body.base_steps = baseSteps;
+      body.steps = steps;
+      body.base_cfg = baseCfg;
+      body.cfg = cfg;
     } else {
       body.width = width;
       body.height = height;
@@ -624,6 +625,11 @@ function App() {
     const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
     setWanUnetHighName(pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_HIGH_NAME));
     setWanUnetLowName(pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_LOW_NAME));
+    setBaseSteps(4);
+    setSteps(4);
+    setBaseCfg(2.0);
+    setCfg(1.0);
+    setI2VResolution("720P");
     if (preset === "realistic_video") {
       setLoras([]);
       setEnableLora(false);
@@ -636,6 +642,11 @@ function App() {
       strength_clip: idx === 0 ? 0.3 : 0.2,
     }));
     setLoras(animeRows.length > 0 ? animeRows : [defaultLora()]);
+  }
+
+  function saveDefaultPayload() {
+    localStorage.setItem(`default_payload_${mode}`, JSON.stringify(payload, null, 2));
+    alert("Saved as default payload for mode: " + mode);
   }
 
   function loadPayloadFromJson() {
@@ -848,6 +859,26 @@ function App() {
       setPayloadImportError(String(err));
     }
   }
+
+  function handleFileRead(key: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", file: File) {
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      onURLChange(key, String(ev.target?.result || ""));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`default_payload_${mode}`);
+    if (saved) {
+      setPayloadJsonText(saved);
+    } else {
+      setPayloadJsonText("");
+    }
+  }, [mode]);
 
   return (
     <div className="page">
@@ -1124,6 +1155,14 @@ function App() {
                     </select>
                   </label>
                   <div className="inline">
+                    <NumberField label="High Noise Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={50} step={1} />
+                    <NumberField label="Low Noise Steps" value={steps} onChange={setSteps} min={1} max={50} step={1} />
+                  </div>
+                  <div className="inline">
+                    <NumberField label="High Noise CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
+                    <NumberField label="Low Noise CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
+                  </div>
+                  <div className="inline">
                     <label>
                       WAN Resolution
                       <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
@@ -1131,20 +1170,6 @@ function App() {
                         <option value="720P">720P</option>
                         <option value="1080P">1080P</option>
                       </select>
-                    </label>
-                    <label>
-                      WAN Audio URL
-                      <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
-                    </label>
-                  </div>
-                  <div className="inline">
-                    <label className="toggle">
-                      <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
-                      Prompt extend
-                    </label>
-                    <label className="toggle">
-                      <input type="checkbox" checked={i2vWatermark} onChange={(e) => setI2VWatermark(e.target.checked)} />
-                      Watermark
                     </label>
                   </div>
                 </div>
@@ -1428,6 +1453,9 @@ function App() {
             <div className="toolbar">
               <button type="button" className="ghost" onClick={() => void copyText(JSON.stringify(payload, null, 2))}>
                 Copy Payload
+              </button>
+              <button type="button" className="ghost" onClick={saveDefaultPayload}>
+                Save to default payload
               </button>
             </div>
             <pre>{JSON.stringify(payload, null, 2)}</pre>
