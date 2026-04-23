@@ -809,8 +809,6 @@ def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None) ->
                 try:
                     new_lines = f.read()
                     if new_lines:
-                        sys.stdout.write(new_lines)
-                        sys.stdout.flush()
                         try:
                             from runpod.serverless.modules.rp_progress import progress_update
                             progress_update(event, {"logs": new_lines})
