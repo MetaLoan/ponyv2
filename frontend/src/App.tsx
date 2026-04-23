@@ -62,8 +62,8 @@ const DEFAULT_WAN_REALISTIC_PROMPT =
   "真实摄影感，电影感，稳定镜头，自然动作，干净光线，细节清晰，人物动作连贯，画面通透， realistic, photorealistic, high detail";
 const DEFAULT_WAN_ANIME_PROMPT =
   "anime style, clean lineart, vibrant colors, smooth motion, expressive character design, cinematic framing, detailed background, dynamic composition";
-const DEFAULT_WAN_UNET_HIGH_NAME = "WAN2.2-NSFW-FastMove-V2-H.safetensors";
-const DEFAULT_WAN_UNET_LOW_NAME = "WAN2.2-NSFW-FastMove-V2-L.safetensors";
+const DEFAULT_WAN_UNET_HIGH_NAME = "wan22I2V8StepsNSFWFP8_fp8Highnoise10.safetensors";
+const DEFAULT_WAN_UNET_LOW_NAME = "wan22I2V8StepsNSFWFP8_fp8Lownoise10.safetensors";
 const DEFAULT_WAN_VAE_NAME = "wan_2.1_vae.safetensors";
 const DEFAULT_WAN_CLIP_VISION_NAME = "clip_vision_h.safetensors";
 const DEFAULT_WAN_CLIP_NAME = "umt5_xxl_fp8_e4m3fn_scaled.safetensors";
