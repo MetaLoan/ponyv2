@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_DIR="${TARGET_DIR:-/workspace/runpod-slim/ComfyUI/models/unet}"
+TARGET_ROOT="${TARGET_ROOT:-/workspace/runpod-slim/ComfyUI/models}"
 KEY_FILE="${KEY_FILE:-/workspace/key.env}"
 Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2540892}"
 Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2540896}"
 Q8H_NAME="${Q8H_NAME:-WAN2.2-NSFW-FastMove-V2-H.safetensors}"
 Q8L_NAME="${Q8L_NAME:-WAN2.2-NSFW-FastMove-V2-L.safetensors}"
+VAE_URL="${VAE_URL:-https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors}"
+VAE_NAME="${VAE_NAME:-wan_2.1_vae.safetensors}"
+CLIP_VISION_URL="${CLIP_VISION_URL:-https://huggingface.co/f5aiteam/ComfyUI/resolve/main/clip/EVA02_CLIP_L_336_psz14_s6B.pt}"
+CLIP_VISION_NAME="${CLIP_VISION_NAME:-EVA02_CLIP_L_336_psz14_s6B.pt}"
+TEXT_ENCODER_URL="${TEXT_ENCODER_URL:-https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors}"
+TEXT_ENCODER_NAME="${TEXT_ENCODER_NAME:-umt5_xxl_fp8_e4m3fn_scaled.safetensors}"
 
 token="${CIVITAI_TOKEN:-${civitai:-}}"
 if [[ -z "$token" && -f "$KEY_FILE" ]]; then
@@ -22,13 +28,21 @@ if [[ -z "$token" ]]; then
   exit 1
 fi
 
-mkdir -p "$TARGET_DIR"
-
 download_one() {
   local url="$1"
   local out_name="$2"
+  local target_dir="$3"
+  local dst="$target_dir/$out_name"
   local tmp_file
-  tmp_file="$(mktemp "$TARGET_DIR/.${out_name}.XXXXXX")"
+
+  mkdir -p "$target_dir"
+
+  if [[ -s "$dst" ]]; then
+    echo "[SKIP] $dst already exists"
+    return 0
+  fi
+
+  tmp_file="$(mktemp "$target_dir/.${out_name}.XXXXXX")"
   trap 'rm -f "$tmp_file"' RETURN
 
   echo "[download] $out_name"
@@ -43,11 +57,14 @@ download_one() {
     exit 1
   fi
 
-  mv -f "$tmp_file" "$TARGET_DIR/$out_name"
+  mv -f "$tmp_file" "$dst"
   trap - RETURN
 }
 
-download_one "$Q8H_URL" "$Q8H_NAME"
-download_one "$Q8L_URL" "$Q8L_NAME"
+download_one "$Q8H_URL" "$Q8H_NAME" "$TARGET_ROOT/unet"
+download_one "$Q8L_URL" "$Q8L_NAME" "$TARGET_ROOT/unet"
+download_one "$VAE_URL" "$VAE_NAME" "$TARGET_ROOT/vae"
+download_one "$CLIP_VISION_URL" "$CLIP_VISION_NAME" "$TARGET_ROOT/clip_vision"
+download_one "$TEXT_ENCODER_URL" "$TEXT_ENCODER_NAME" "$TARGET_ROOT/text_encoders"
 
-echo "[done] $TARGET_DIR"
+echo "[done] $TARGET_ROOT"
