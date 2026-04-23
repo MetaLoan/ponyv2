@@ -1567,9 +1567,7 @@ def handler(event: Dict) -> Dict:
             try:
                 return _generate_wan_extend_any_frame_comfy(data, request_id)
             except Exception as exc:
-                if _wan_backend_requested() == "comfy":
-                    raise
-                print(f"[WARN] WAN comfy backend failed, falling back to DashScope: {exc}")
+                raise RuntimeError(f"WAN comfy backend failed: {exc}") from exc
         return _generate_wan_extend_any_frame(data, request_id)
 
     prompt = load_json(WORKFLOW_API_PATH)
