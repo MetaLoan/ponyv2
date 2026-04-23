@@ -1233,6 +1233,16 @@ def _apply_wan_lora_chain(prompt: Dict, loras: List[Dict]) -> List:
     return model_source
 
 
+def _wan_model_name(raw_value: object, fallback: str) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return fallback
+    lower = value.lower()
+    if "wan" in lower or "kf2v" in lower or "i2v" in lower or "svi" in lower:
+        return value
+    return fallback
+
+
 def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: str, segment_length: int, segment_idx: int) -> None:
     if "39" in prompt:
         prompt["39"]["inputs"]["vae_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
@@ -1241,9 +1251,9 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
     if "38" in prompt:
         prompt["38"]["inputs"]["clip_name"] = str(data.get("wan_clip_name", WAN_CLIP_NAME)).strip() or WAN_CLIP_NAME
     if "37" in prompt:
-        prompt["37"]["inputs"]["unet_name"] = str(data.get("wan_unet_high_name", WAN_UNET_HIGH_NAME)).strip() or WAN_UNET_HIGH_NAME
+        prompt["37"]["inputs"]["unet_name"] = _wan_model_name(data.get("wan_unet_high_name", WAN_UNET_HIGH_NAME), WAN_UNET_HIGH_NAME)
     if "100" in prompt:
-        prompt["100"]["inputs"]["unet_name"] = str(data.get("wan_unet_low_name", WAN_UNET_LOW_NAME)).strip() or WAN_UNET_LOW_NAME
+        prompt["100"]["inputs"]["unet_name"] = _wan_model_name(data.get("wan_unet_low_name", WAN_UNET_LOW_NAME), WAN_UNET_LOW_NAME)
     if "52" in prompt:
         prompt["52"]["inputs"]["image"] = current_start_image
     if "6" in prompt:

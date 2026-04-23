@@ -67,6 +67,12 @@ const DEFAULT_WAN_VAE_NAME = "wan_2.1_vae.safetensors";
 const DEFAULT_WAN_CLIP_VISION_NAME = "EVA02_CLIP_L_336_psz14_s6B.pt";
 const DEFAULT_WAN_CLIP_NAME = "umt5_xxl_fp8_e4m3fn_scaled.safetensors";
 const WAN_ANIME_LORA_HINTS = ["live-wallpaper-style", "wan22-2d-animation-effects-2d", "wan-22-live2d-background", "2309690"];
+const WAN_MODEL_HINTS = ["wan", "wan2", "kf2v", "i2v", "svi"];
+
+function matchesHints(item: CatalogItem, hints: string[]): boolean {
+  const haystack = `${item.name} ${item.path}`.toLowerCase();
+  return hints.some((hint) => haystack.includes(hint.toLowerCase()));
+}
 
 function pickCatalogName(items: CatalogItem[], preferred: string, fallback: string): string {
   const names = items.map((item) => item.name).filter((name) => name.trim() !== "");
@@ -172,8 +178,10 @@ function App() {
   const [payloadImportError, setPayloadImportError] = useState("");
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
   const wanModelOptions = useMemo(() => {
-    const names = new Set<string>([DEFAULT_WAN_UNET_HIGH_NAME, DEFAULT_WAN_UNET_LOW_NAME]);
-    for (const item of catalog.checkpoints || []) {
+    const source = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const pool = source.length > 0 ? source : (catalog.checkpoints || []);
+    const names = new Set<string>();
+    for (const item of pool) {
       if (item.name.trim()) {
         names.add(item.name.trim());
       }
@@ -183,6 +191,10 @@ function App() {
     }
     if (wanUnetLowName.trim()) {
       names.add(wanUnetLowName.trim());
+    }
+    if (names.size === 0) {
+      names.add(DEFAULT_WAN_UNET_HIGH_NAME);
+      names.add(DEFAULT_WAN_UNET_LOW_NAME);
     }
     return Array.from(names);
   }, [catalog.checkpoints, wanUnetHighName, wanUnetLowName]);
@@ -270,8 +282,10 @@ function App() {
     if (!isWanMode) {
       return;
     }
-    setWanUnetHighName((current) => pickCatalogName(catalog.checkpoints || [], current, DEFAULT_WAN_UNET_HIGH_NAME));
-    setWanUnetLowName((current) => pickCatalogName(catalog.checkpoints || [], current, DEFAULT_WAN_UNET_LOW_NAME));
+    const wanCheckpoints = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const checkpointSource = wanCheckpoints.length > 0 ? wanCheckpoints : catalog.checkpoints || [];
+    setWanUnetHighName((current) => pickCatalogName(checkpointSource, current, DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName((current) => pickCatalogName(checkpointSource, current, DEFAULT_WAN_UNET_LOW_NAME));
     setWanVaeName((current) => pickCatalogName(catalog.vaes || [], current, DEFAULT_WAN_VAE_NAME));
     setWanClipVisionName((current) => pickCatalogName(catalog.clip_visions || [], current, DEFAULT_WAN_CLIP_VISION_NAME));
     setWanClipName((current) => pickCatalogName(catalog.text_encoders || [], current, DEFAULT_WAN_CLIP_NAME));
@@ -583,8 +597,6 @@ function App() {
       return;
     }
     setMode("wan2_2_i2v_extend_any_frame");
-    setWanUnetHighName(DEFAULT_WAN_UNET_HIGH_NAME);
-    setWanUnetLowName(DEFAULT_WAN_UNET_LOW_NAME);
     setEnableLora(preset === "anime_video");
     setWanExtendPrompt(preset === "anime_video" ? DEFAULT_WAN_ANIME_PROMPT : DEFAULT_WAN_REALISTIC_PROMPT);
     setNegativePrompt(
@@ -595,6 +607,10 @@ function App() {
     setFrames(81);
     setWanStartMedia({ kind: "file", file: null, url: "", preview: "" });
     setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
+    const wanCheckpoints = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const checkpointSource = wanCheckpoints.length > 0 ? wanCheckpoints : catalog.checkpoints || [];
+    setWanUnetHighName(pickCatalogName(checkpointSource, "", DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName(pickCatalogName(checkpointSource, "", DEFAULT_WAN_UNET_LOW_NAME));
     if (preset === "realistic_video") {
       setLoras([]);
       setEnableLora(false);
