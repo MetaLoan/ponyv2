@@ -53,6 +53,8 @@ const DEFAULT_QWEN_EDIT_PROMPT =
   "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}";
 const DEFAULT_WAN_EXTEND_PROMPT =
   "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，动作自然连贯，镜头稳定，细节清晰，电影感成片";
+const DEFAULT_WAN_UNET_HIGH_NAME = "WAN2.2-NSFW-FastMove-V2-H.safetensors";
+const DEFAULT_WAN_UNET_LOW_NAME = "WAN2.2-NSFW-FastMove-V2-L.safetensors";
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -73,6 +75,8 @@ function App() {
   );
   const [qwenPoseFusionPrompt, setQwenPoseFusionPrompt] = useState(DEFAULT_QWEN_POSE_FUSION_PROMPT);
   const [wanExtendPrompt, setWanExtendPrompt] = useState(DEFAULT_WAN_EXTEND_PROMPT);
+  const [wanUnetHighName, setWanUnetHighName] = useState(DEFAULT_WAN_UNET_HIGH_NAME);
+  const [wanUnetLowName, setWanUnetLowName] = useState(DEFAULT_WAN_UNET_LOW_NAME);
   const [frames, setFrames] = useState(81);
   const [negativePrompt, setNegativePrompt] = useState(
     "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
@@ -136,6 +140,21 @@ function App() {
   const [payloadJsonText, setPayloadJsonText] = useState("");
   const [payloadImportError, setPayloadImportError] = useState("");
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
+  const wanModelOptions = useMemo(() => {
+    const names = new Set<string>([DEFAULT_WAN_UNET_HIGH_NAME, DEFAULT_WAN_UNET_LOW_NAME]);
+    for (const item of catalog.checkpoints || []) {
+      if (item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    }
+    if (wanUnetHighName.trim()) {
+      names.add(wanUnetHighName.trim());
+    }
+    if (wanUnetLowName.trim()) {
+      names.add(wanUnetLowName.trim());
+    }
+    return Array.from(names);
+  }, [catalog.checkpoints, wanUnetHighName, wanUnetLowName]);
 
   useEffect(() => {
     void (async () => {
@@ -215,6 +234,8 @@ function App() {
         body.endimg = wanEndValue;
       }
       body.frames = frames;
+      body.wan_unet_high_name = wanUnetHighName;
+      body.wan_unet_low_name = wanUnetLowName;
       body.i2v_resolution = i2vResolution;
       body.i2v_audio_url = i2vAudioURL;
       body.i2v_prompt_extend = i2vPromptExtend;
@@ -304,6 +325,8 @@ function App() {
     wanStartMedia,
     wanEndMedia,
     frames,
+    wanUnetHighName,
+    wanUnetLowName,
     qwenExtraMedia,
     i2vResolution,
     i2vAudioURL,
@@ -498,6 +521,12 @@ function App() {
       }
       if (typeof source.frames === "number") {
         setFrames(source.frames);
+      }
+      if (typeof source.wan_unet_high_name === "string") {
+        setWanUnetHighName(source.wan_unet_high_name);
+      }
+      if (typeof source.wan_unet_low_name === "string") {
+        setWanUnetLowName(source.wan_unet_low_name);
       }
       if (typeof source.startimg === "string" || typeof source.startimg === "object") {
         setWanStartMedia(mediaFromImportedValue(source.startimg));
@@ -825,6 +854,29 @@ function App() {
         <section className="grid two">
           {isWanMode ? (
             <section className="card">
+              <h2>WAN Main Models</h2>
+              <div className="stack">
+                <label>
+                  WAN High UNet
+                  <select value={wanUnetHighName} onChange={(e) => setWanUnetHighName(e.target.value)}>
+                    {wanModelOptions.map((name) => (
+                      <option key={`wan-high-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  WAN Low UNet
+                  <select value={wanUnetLowName} onChange={(e) => setWanUnetLowName(e.target.value)}>
+                    {wanModelOptions.map((name) => (
+                      <option key={`wan-low-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <h2>WAN LoRA Chain</h2>
               <label className="toggle">
                 <input type="checkbox" checked={enableLora} onChange={(e) => setEnableLora(e.target.checked)} />

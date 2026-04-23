@@ -66,6 +66,8 @@ type GenerateRequest struct {
 	ReferenceImage      string       `json:"reference_image"`
 	StartImg            string       `json:"startimg"`
 	EndImg              string       `json:"endimg"`
+	WanUnetHighName     string       `json:"wan_unet_high_name"`
+	WanUnetLowName      string       `json:"wan_unet_low_name"`
 	QwenExtraImage      string       `json:"qwen_extra_image"`
 	PoseImage           string       `json:"pose_image"`
 	Prompt              string       `json:"prompt"`
@@ -353,15 +355,17 @@ func (a *App) handleRenderWorkflow(w http.ResponseWriter, r *http.Request) {
 			},
 			NormalizedInput: req,
 			RenderedWorkflow: map[string]interface{}{
-				"mode":              req.Mode,
-				"segment_limit":     wanExtendAnyFrameSegmentLimit,
-				"segment_count":     segmentCount,
-				"frames":            req.Frames,
-				"workflow_template": a.Config.WanWorkflowTemplate,
-				"startimg_required": true,
-				"endimg_optional":   true,
-				"prompt_field":      "prompt",
-				"final_output":      "merged_video + per-segment_videos",
+				"mode":               req.Mode,
+				"segment_limit":      wanExtendAnyFrameSegmentLimit,
+				"segment_count":      segmentCount,
+				"frames":             req.Frames,
+				"wan_unet_high_name": req.WanUnetHighName,
+				"wan_unet_low_name":  req.WanUnetLowName,
+				"workflow_template":  a.Config.WanWorkflowTemplate,
+				"startimg_required":  true,
+				"endimg_optional":    true,
+				"prompt_field":       "prompt",
+				"final_output":       "merged_video + per-segment_videos",
 			},
 		})
 		return
@@ -875,6 +879,8 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"startimg":               req.StartImg,
 		"endimg":                 req.EndImg,
 		"frames":                 req.Frames,
+		"wan_unet_high_name":     req.WanUnetHighName,
+		"wan_unet_low_name":      req.WanUnetLowName,
 		"prompt":                 req.Prompt,
 		"qwen_swap_prompt":       req.QwenSwapPrompt,
 		"qwen_edit_prompt":       req.QwenEditPrompt,
@@ -1408,6 +1414,8 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.QwenExtraImage = strings.TrimSpace(req.QwenExtraImage)
 	req.StartImg = strings.TrimSpace(req.StartImg)
 	req.EndImg = strings.TrimSpace(req.EndImg)
+	req.WanUnetHighName = firstNonEmpty(req.WanUnetHighName, "WAN2.2-NSFW-FastMove-V2-H.safetensors")
+	req.WanUnetLowName = firstNonEmpty(req.WanUnetLowName, "WAN2.2-NSFW-FastMove-V2-L.safetensors")
 	req.Frames = firstPositive(req.Frames, wanExtendAnyFrameSegmentLimit)
 	req.CKPTName = firstNonEmpty(req.CKPTName, "SDXL_Photorealistic_Mix_nsfw.safetensors")
 	req.UpscaleModelName = firstNonEmpty(req.UpscaleModelName, "4x-UltraSharp.pth")
