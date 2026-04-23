@@ -7,7 +7,7 @@
   },
   "49": {
     "inputs": {
-      "clip_name": "clip_vision_h.safetensors"
+      "clip_name": "EVA02_CLIP_L_336_psz14_s6B.pt"
     },
     "class_type": "CLIPVisionLoader"
   },
