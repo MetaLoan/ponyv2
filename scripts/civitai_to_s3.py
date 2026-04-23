@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download a Civitai model/version and upload it to the RunPod S3 bucket.
+"""Download a Civitai model/version and either upload it to S3 or save it locally.
 
 Usage examples:
   python3 scripts/civitai_to_s3.py \
@@ -11,6 +11,9 @@ Usage examples:
 
   KEY_FILE=/workspace/key.env python3 scripts/civitai_to_s3.py URL --kind lora
 
+  python3 scripts/civitai_to_s3.py URL --kind checkpoint \
+    --target-dir /workspace/runpod-slim/ComfyUI/models/checkpoints
+
 Environment / key file:
   - civitai=... or CIVITAI_TOKEN=...
   - S3_ACCESS_KEY_ID / aws_access_key_id
@@ -19,6 +22,7 @@ Environment / key file:
   - S3_ENDPOINT_URL / Endpoint URL
   - S3_REGION (optional)
   - S3_MODEL_ROOT_PREFIX (optional, default: runpod-slim/ComfyUI/models)
+  - When using --target-dir, S3 settings are optional and the file is saved locally.
 """
 
 from __future__ import annotations
@@ -346,13 +350,14 @@ def upload_to_s3(local_file: Path, cfg: dict, kind: str) -> tuple[str, dict]:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Download a Civitai model/version and upload it to S3")
+    p = argparse.ArgumentParser(description="Download a Civitai model/version and upload it to S3 or save locally")
     p.add_argument("source", help="Civitai model URL, download URL, or modelVersionId")
     p.add_argument("--kind", choices=sorted(MODEL_KIND_TO_FOLDER.keys()), default="lora", help="S3 folder type")
     p.add_argument("--download-dir", default="/tmp", help="temporary download directory")
     p.add_argument("--key-file", default=os.getenv("KEY_FILE", ""), help="optional key.env style file")
     p.add_argument("--s3-key-file", default=os.getenv("S3_KEY_FILE", ""), help="optional s3-credentials.txt style file")
     p.add_argument("--name", default="", help="override the uploaded filename stem")
+    p.add_argument("--target-dir", default="", help="save the downloaded model to this local directory instead of uploading to S3")
     p.add_argument("--keep-local", action="store_true", help="keep the downloaded file after upload")
     return p.parse_args()
 
@@ -361,11 +366,10 @@ def main() -> int:
     args = parse_args()
     if args.key_file:
         load_key_env(args.key_file)
-    if args.s3_key_file:
+    if args.s3_key_file and not args.target_dir.strip():
         load_s3_credentials(args.s3_key_file)
 
     token = get_token()
-    s3_cfg = get_s3_cfg()
     model_version_id = extract_model_version_id(args.source)
     download_dir = Path(args.download_dir)
 
@@ -381,14 +385,23 @@ def main() -> int:
             local_file = desired
         else:
             local_file = rename_downloaded_file(local_file, model_version_id, token)
-        key, head = upload_to_s3(local_file, s3_cfg, args.kind)
-
-        print(f"[downloaded] {local_file}")
-        print(f"[uploaded] bucket={s3_cfg['bucket']} key={key}")
-        print(f"[etag] {head.get('ETag')}")
-        print(f"[size] {head.get('ContentLength')}")
+        if args.target_dir.strip():
+            target_dir = Path(args.target_dir.strip())
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / local_file.name
+            if target.exists() and target.resolve() != local_file.resolve():
+                target.unlink()
+            local_file.replace(target)
+            print(f"[saved] {target}")
+        else:
+            s3_cfg = get_s3_cfg()
+            key, head = upload_to_s3(local_file, s3_cfg, args.kind)
+            print(f"[downloaded] {local_file}")
+            print(f"[uploaded] bucket={s3_cfg['bucket']} key={key}")
+            print(f"[etag] {head.get('ETag')}")
+            print(f"[size] {head.get('ContentLength')}")
     finally:
-        if local_file and local_file.exists() and not args.keep_local:
+        if local_file and local_file.exists() and not args.keep_local and not args.target_dir.strip():
             local_file.unlink(missing_ok=True)
     return 0
 
