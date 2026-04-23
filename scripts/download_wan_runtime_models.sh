@@ -18,6 +18,7 @@ CLIP_VISION_NAME="${CLIP_VISION_NAME:-clip_vision_h.safetensors}"
 CLIP_VISION_URL="${CLIP_VISION_URL:-$HF_BASE_21/clip_vision/clip_vision_h.safetensors}"
 
 mkdir -p \
+  "$MODELS_DIR/unet" \
   "$MODELS_DIR/diffusion_models" \
   "$MODELS_DIR/vae" \
   "$MODELS_DIR/text_encoders" \
@@ -46,6 +47,21 @@ download_http() {
   mv -f "$dst.tmp" "$dst"
 }
 
+resolve_existing_model() {
+  local name="$1"
+  local primary_dir="$2"
+  shift 2
+  local candidates=("$primary_dir/$name" "$@")
+  local path
+  for path in "${candidates[@]}"; do
+    if [[ -s "$path" ]]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+  return 1
+}
+
 download_civitai() {
   local url="$1"
   local dst="$2"
@@ -68,10 +84,22 @@ download_civitai() {
 download_http "$VAE_URL" "$MODELS_DIR/vae/$VAE_NAME"
 download_http "$TEXT_ENCODER_URL" "$MODELS_DIR/text_encoders/$TEXT_ENCODER_NAME"
 download_http "$CLIP_VISION_URL" "$MODELS_DIR/clip_vision/$CLIP_VISION_NAME"
-download_civitai "$Q8H_URL" "$MODELS_DIR/diffusion_models/$Q8H_NAME"
-download_civitai "$Q8L_URL" "$MODELS_DIR/diffusion_models/$Q8L_NAME"
+
+if existing_h="$(resolve_existing_model "$Q8H_NAME" "$MODELS_DIR/unet" "$MODELS_DIR/diffusion_models/$Q8H_NAME")"; then
+  echo "[skip] $existing_h"
+else
+  download_civitai "$Q8H_URL" "$MODELS_DIR/unet/$Q8H_NAME"
+fi
+
+if existing_l="$(resolve_existing_model "$Q8L_NAME" "$MODELS_DIR/unet" "$MODELS_DIR/diffusion_models/$Q8L_NAME")"; then
+  echo "[skip] $existing_l"
+else
+  download_civitai "$Q8L_URL" "$MODELS_DIR/unet/$Q8L_NAME"
+fi
 
 echo
+echo "=== unet ==="
+ls -lh "$MODELS_DIR/unet"
 echo "=== diffusion_models ==="
 ls -lh "$MODELS_DIR/diffusion_models"
 echo "=== vae ==="
