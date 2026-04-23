@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import time
+import sys
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -808,7 +809,14 @@ def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None) ->
                 try:
                     new_lines = f.read()
                     if new_lines:
-                        runpod.serverless.progress_update(event, {"logs": new_lines})
+                        sys.stdout.write(new_lines)
+                        sys.stdout.flush()
+                        try:
+                            from runpod.serverless.modules.rp_progress import progress_update
+                            progress_update(event, {"logs": new_lines})
+                        except Exception:
+                            # Fallback if the direct import fails
+                            runpod.serverless.progress_update(event, {"logs": new_lines})
                 except Exception:
                     pass
             time.sleep(1.5)

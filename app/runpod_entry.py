@@ -78,7 +78,7 @@ def start_comfy_if_needed() -> None:
     boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "360"))
     comfy_cmd = os.getenv(
         "COMFY_START_CMD",
-        "python3 /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188",
+        "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188",
     )
 
     try:
