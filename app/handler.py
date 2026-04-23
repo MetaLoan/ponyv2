@@ -1355,8 +1355,12 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             prompt.pop("151", None)
             
         data_copy = dict(data)
-        base_seed = int(data_copy.get("seed", 0) or 0)
-        data_copy["seed"] = base_seed + idx
+        wan_seeds = data.get("wan_seeds", [])
+        if isinstance(wan_seeds, list) and len(wan_seeds) > idx:
+            data_copy["seed"] = int(wan_seeds[idx])
+        else:
+            base_seed = int(data_copy.get("seed", 0) or 0)
+            data_copy["seed"] = base_seed + idx
         
         _apply_wan_workflow_defaults(prompt, data_copy, start_image_filename, segment_length, idx + 1)
         if "6" in prompt:

@@ -178,6 +178,7 @@ function App() {
   const [i2vNegativePrompt, setI2VNegativePrompt] = useState(
     "low quality, blurry, flicker, jitter, motion artifacts, deformed, extra limbs, bad proportions"
   );
+  const [wanSeeds, setWanSeeds] = useState<number[]>([]);
   const [i2vAudioURL, setI2VAudioURL] = useState("");
   const [i2vPromptExtend, setI2VPromptExtend] = useState(true);
   const [i2vWatermark, setI2VWatermark] = useState(false);
@@ -355,6 +356,7 @@ function App() {
       body.steps = steps;
       body.base_cfg = baseCfg;
       body.cfg = cfg;
+      body.wan_seeds = Array.from({ length: Math.max(1, Math.ceil((frames - 1) / 80)) }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
     } else {
       body.width = width;
       body.height = height;
@@ -439,6 +441,7 @@ function App() {
     negativePrompt,
     wanStartMedia,
     wanEndMedia,
+    wanSeeds,
     frames,
     wanUnetHighName,
     wanUnetLowName,
@@ -621,6 +624,7 @@ function App() {
     setFrames(81);
     setWanStartMedia({ kind: "file", file: null, url: "", preview: "" });
     setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
+    setWanSeeds([]);
     const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
     setWanUnetHighName(pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_HIGH_NAME));
@@ -824,6 +828,9 @@ function App() {
       if (typeof source.i2v_model === "string") {
         setI2VModel(source.i2v_model);
       }
+      if (Array.isArray(source.wan_seeds)) {
+        setWanSeeds(source.wan_seeds.map(Number));
+      }
       if (typeof source.i2v_resolution === "string") {
         setI2VResolution(source.i2v_resolution);
       }
@@ -1015,7 +1022,30 @@ function App() {
           ) : mode === "wan2_2_i2v_extend_any_frame" ? (
             <div className="stack">
               <textarea rows={4} value={wanExtendPrompt} onChange={(e) => setWanExtendPrompt(e.target.value)} />
-              <NumberField label="Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
+              <div className="inline">
+                <NumberField label="Duration (Seconds)" value={Math.floor((frames - 1) / 16)} onChange={(v) => setFrames(Math.max(1, v) * 16 + 1)} min={1} max={60} step={1} />
+                <NumberField label="Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
+              </div>
+              {frames > 81 && (
+                <div className="stack" style={{ marginTop: "1rem" }}>
+                  <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Seeds</h4>
+                  <div className="inline" style={{ flexWrap: 'wrap' }}>
+                    {Array.from({ length: Math.ceil((frames - 1) / 80) }).map((_, idx) => (
+                      <NumberField 
+                        key={idx} 
+                        label={`Segment ${idx + 1}`} 
+                        value={wanSeeds[idx] ?? seed + idx} 
+                        onChange={(v) => {
+                          const newSeeds = [...wanSeeds];
+                          newSeeds[idx] = v;
+                          setWanSeeds(newSeeds);
+                        }} 
+                        min={0} max={9999999999999999} step={1} 
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
