@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame";
+type WanPreset = "manual" | "realistic_video" | "anime_video";
 
 type CatalogItem = {
   name: string;
@@ -53,8 +54,13 @@ const DEFAULT_QWEN_EDIT_PROMPT =
   "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}";
 const DEFAULT_WAN_EXTEND_PROMPT =
   "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，动作自然连贯，镜头稳定，细节清晰，电影感成片";
+const DEFAULT_WAN_REALISTIC_PROMPT =
+  "真实摄影感，电影感，稳定镜头，自然动作，干净光线，细节清晰，人物动作连贯，画面通透， realistic, photorealistic, high detail";
+const DEFAULT_WAN_ANIME_PROMPT =
+  "anime style, clean lineart, vibrant colors, smooth motion, expressive character design, cinematic framing, detailed background, dynamic composition";
 const DEFAULT_WAN_UNET_HIGH_NAME = "WAN2.2-NSFW-FastMove-V2-H.safetensors";
 const DEFAULT_WAN_UNET_LOW_NAME = "WAN2.2-NSFW-FastMove-V2-L.safetensors";
+const WAN_ANIME_LORA_HINTS = ["live-wallpaper-style", "wan22-2d-animation-effects-2d", "wan-22-live2d-background", "2309690"];
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -77,6 +83,7 @@ function App() {
   const [wanExtendPrompt, setWanExtendPrompt] = useState(DEFAULT_WAN_EXTEND_PROMPT);
   const [wanUnetHighName, setWanUnetHighName] = useState(DEFAULT_WAN_UNET_HIGH_NAME);
   const [wanUnetLowName, setWanUnetLowName] = useState(DEFAULT_WAN_UNET_LOW_NAME);
+  const [wanPreset, setWanPreset] = useState<WanPreset>("manual");
   const [frames, setFrames] = useState(81);
   const [negativePrompt, setNegativePrompt] = useState(
     "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
@@ -155,6 +162,12 @@ function App() {
     }
     return Array.from(names);
   }, [catalog.checkpoints, wanUnetHighName, wanUnetLowName]);
+  const wanAnimeLoraOptions = useMemo(() => {
+    const matches = (catalog.loras || []).filter((item) =>
+      WAN_ANIME_LORA_HINTS.some((hint) => item.name.toLowerCase().includes(hint.toLowerCase()) || item.path.toLowerCase().includes(hint.toLowerCase()))
+    );
+    return matches.length > 0 ? matches : catalog.loras || [];
+  }, [catalog.loras]);
 
   useEffect(() => {
     void (async () => {
@@ -488,6 +501,38 @@ function App() {
 
   function removeLora(id: string) {
     setLoras((rows) => rows.filter((row) => row.id !== id));
+  }
+
+  function applyWanPreset(preset: WanPreset) {
+    setWanPreset(preset);
+    if (preset === "manual") {
+      return;
+    }
+    setMode("wan2_2_i2v_extend_any_frame");
+    setWanUnetHighName(DEFAULT_WAN_UNET_HIGH_NAME);
+    setWanUnetLowName(DEFAULT_WAN_UNET_LOW_NAME);
+    setEnableLora(preset === "anime_video");
+    setWanExtendPrompt(preset === "anime_video" ? DEFAULT_WAN_ANIME_PROMPT : DEFAULT_WAN_REALISTIC_PROMPT);
+    setNegativePrompt(
+      preset === "anime_video"
+        ? "bad anatomy, blurry, low quality, worst quality, text, watermark, extra fingers, extra limbs, deformed, distorted, messy background"
+        : "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, blurry, low quality, worst quality, text, watermark, extra limbs, bad proportions"
+    );
+    setFrames(81);
+    setWanStartMedia({ kind: "file", file: null, url: "", preview: "" });
+    setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
+    if (preset === "realistic_video") {
+      setLoras([]);
+      setEnableLora(false);
+      return;
+    }
+    const animeRows = wanAnimeLoraOptions.slice(0, 2).map((item, idx) => ({
+      id: crypto.randomUUID(),
+      name: item.name,
+      strength_model: idx === 0 ? 0.3 : 0.2,
+      strength_clip: idx === 0 ? 0.3 : 0.2,
+    }));
+    setLoras(animeRows.length > 0 ? animeRows : [defaultLora()]);
   }
 
   function loadPayloadFromJson() {
@@ -854,28 +899,48 @@ function App() {
         <section className="grid two">
           {isWanMode ? (
             <section className="card">
-              <h2>WAN Main Models</h2>
-              <div className="stack">
-                <label>
-                  WAN High UNet
-                  <select value={wanUnetHighName} onChange={(e) => setWanUnetHighName(e.target.value)}>
-                    {wanModelOptions.map((name) => (
-                      <option key={`wan-high-${name}`} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  WAN Low UNet
-                  <select value={wanUnetLowName} onChange={(e) => setWanUnetLowName(e.target.value)}>
-                    {wanModelOptions.map((name) => (
-                      <option key={`wan-low-${name}`} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <h2>WAN Preset</h2>
+              <label>
+                Preset
+                <select value={wanPreset} onChange={(e) => applyWanPreset(e.target.value as WanPreset)}>
+                  <option value="manual">Manual</option>
+                  <option value="realistic_video">Realistic Video</option>
+                  <option value="anime_video">Anime Video</option>
+                </select>
+              </label>
+              <p className="muted compact">
+                Realistic keeps the stack minimal. Anime tries to prefill installed style LoRAs and a stylized prompt.
+              </p>
+              <div className="subcard">
+                <h3 style={{ marginTop: 0 }}>WAN Main Models</h3>
+                <p className="muted compact">
+                  Choose the high and low UNet pair used by WAN before you generate video.
+                </p>
+                <div className="stack">
+                  <label>
+                    WAN High UNet
+                    <select value={wanUnetHighName} onChange={(e) => setWanUnetHighName(e.target.value)}>
+                      {wanModelOptions.map((name) => (
+                        <option key={`wan-high-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    WAN Low UNet
+                    <select value={wanUnetLowName} onChange={(e) => setWanUnetLowName(e.target.value)}>
+                      {wanModelOptions.map((name) => (
+                        <option key={`wan-low-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="muted compact">
+                  Active pair: {wanUnetHighName || "(unset)"} / {wanUnetLowName || "(unset)"}
+                </p>
               </div>
               <h2>WAN LoRA Chain</h2>
               <label className="toggle">
