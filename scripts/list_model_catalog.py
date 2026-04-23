@@ -28,6 +28,10 @@ def allowed(name: str, kind: str) -> bool:
         return lower.endswith(".safetensors") or lower.endswith(".ckpt")
     if kind == "upscale_model":
         return lower.endswith(".pth") or lower.endswith(".pt")
+    if kind == "vae":
+        return lower.endswith(".safetensors") or lower.endswith(".pt") or lower.endswith(".ckpt")
+    if kind in {"clip_vision", "text_encoder"}:
+        return lower.endswith(".pt") or lower.endswith(".safetensors")
     return False
 
 
@@ -57,6 +61,9 @@ def main():
         "checkpoints": list_prefix(s3, cfg["bucket"], f"{root_prefix}/checkpoints/", "checkpoint"),
         "loras": list_prefix(s3, cfg["bucket"], f"{root_prefix}/loras/", "lora"),
         "upscale_models": list_prefix(s3, cfg["bucket"], f"{root_prefix}/upscale_models/", "upscale_model"),
+        "vaes": list_prefix(s3, cfg["bucket"], f"{root_prefix}/vae/", "vae"),
+        "clip_visions": list_prefix(s3, cfg["bucket"], f"{root_prefix}/clip_vision/", "clip_vision"),
+        "text_encoders": list_prefix(s3, cfg["bucket"], f"{root_prefix}/text_encoders/", "text_encoder"),
     }
     json.dump(result, sys.stdout, ensure_ascii=False)
 

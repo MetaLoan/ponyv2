@@ -13,6 +13,9 @@ type CatalogResponse = {
   checkpoints: CatalogItem[];
   loras: CatalogItem[];
   upscale_models: CatalogItem[];
+  vaes: CatalogItem[];
+  clip_visions: CatalogItem[];
+  text_encoders: CatalogItem[];
 };
 
 type HealthResponse = {
@@ -60,7 +63,21 @@ const DEFAULT_WAN_ANIME_PROMPT =
   "anime style, clean lineart, vibrant colors, smooth motion, expressive character design, cinematic framing, detailed background, dynamic composition";
 const DEFAULT_WAN_UNET_HIGH_NAME = "WAN2.2-NSFW-FastMove-V2-H.safetensors";
 const DEFAULT_WAN_UNET_LOW_NAME = "WAN2.2-NSFW-FastMove-V2-L.safetensors";
+const DEFAULT_WAN_VAE_NAME = "wan_2.1_vae.safetensors";
+const DEFAULT_WAN_CLIP_VISION_NAME = "EVA02_CLIP_L_336_psz14_s6B.pt";
+const DEFAULT_WAN_CLIP_NAME = "umt5_xxl_fp8_e4m3fn_scaled.safetensors";
 const WAN_ANIME_LORA_HINTS = ["live-wallpaper-style", "wan22-2d-animation-effects-2d", "wan-22-live2d-background", "2309690"];
+
+function pickCatalogName(items: CatalogItem[], preferred: string, fallback: string): string {
+  const names = items.map((item) => item.name).filter((name) => name.trim() !== "");
+  if (preferred.trim() && names.includes(preferred.trim())) {
+    return preferred.trim();
+  }
+  if (fallback.trim() && names.includes(fallback.trim())) {
+    return fallback.trim();
+  }
+  return names[0] || fallback;
+}
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -68,6 +85,9 @@ function App() {
     checkpoints: [],
     loras: [],
     upscale_models: [],
+    vaes: [],
+    clip_visions: [],
+    text_encoders: [],
   });
   const [catalogError, setCatalogError] = useState<string>("");
   const [mode, setMode] = useState<Mode>("dual_pass_auto_pose");
@@ -83,6 +103,9 @@ function App() {
   const [wanExtendPrompt, setWanExtendPrompt] = useState(DEFAULT_WAN_EXTEND_PROMPT);
   const [wanUnetHighName, setWanUnetHighName] = useState(DEFAULT_WAN_UNET_HIGH_NAME);
   const [wanUnetLowName, setWanUnetLowName] = useState(DEFAULT_WAN_UNET_LOW_NAME);
+  const [wanVaeName, setWanVaeName] = useState(DEFAULT_WAN_VAE_NAME);
+  const [wanClipVisionName, setWanClipVisionName] = useState(DEFAULT_WAN_CLIP_VISION_NAME);
+  const [wanClipName, setWanClipName] = useState(DEFAULT_WAN_CLIP_NAME);
   const [wanPreset, setWanPreset] = useState<WanPreset>("manual");
   const [wanAdvancedOpen, setWanAdvancedOpen] = useState(false);
   const [frames, setFrames] = useState(81);
@@ -163,6 +186,42 @@ function App() {
     }
     return Array.from(names);
   }, [catalog.checkpoints, wanUnetHighName, wanUnetLowName]);
+  const wanVaeOptions = useMemo(() => {
+    const names = new Set<string>([DEFAULT_WAN_VAE_NAME]);
+    for (const item of catalog.vaes || []) {
+      if (item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    }
+    if (wanVaeName.trim()) {
+      names.add(wanVaeName.trim());
+    }
+    return Array.from(names);
+  }, [catalog.vaes, wanVaeName]);
+  const wanClipVisionOptions = useMemo(() => {
+    const names = new Set<string>([DEFAULT_WAN_CLIP_VISION_NAME]);
+    for (const item of catalog.clip_visions || []) {
+      if (item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    }
+    if (wanClipVisionName.trim()) {
+      names.add(wanClipVisionName.trim());
+    }
+    return Array.from(names);
+  }, [catalog.clip_visions, wanClipVisionName]);
+  const wanTextEncoderOptions = useMemo(() => {
+    const names = new Set<string>([DEFAULT_WAN_CLIP_NAME]);
+    for (const item of catalog.text_encoders || []) {
+      if (item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    }
+    if (wanClipName.trim()) {
+      names.add(wanClipName.trim());
+    }
+    return Array.from(names);
+  }, [catalog.text_encoders, wanClipName]);
   const wanAnimeLoraOptions = useMemo(() => {
     const matches = (catalog.loras || []).filter((item) =>
       WAN_ANIME_LORA_HINTS.some((hint) => item.name.toLowerCase().includes(hint.toLowerCase()) || item.path.toLowerCase().includes(hint.toLowerCase()))
@@ -208,6 +267,17 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!isWanMode) {
+      return;
+    }
+    setWanUnetHighName((current) => pickCatalogName(catalog.checkpoints || [], current, DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName((current) => pickCatalogName(catalog.checkpoints || [], current, DEFAULT_WAN_UNET_LOW_NAME));
+    setWanVaeName((current) => pickCatalogName(catalog.vaes || [], current, DEFAULT_WAN_VAE_NAME));
+    setWanClipVisionName((current) => pickCatalogName(catalog.clip_visions || [], current, DEFAULT_WAN_CLIP_VISION_NAME));
+    setWanClipName((current) => pickCatalogName(catalog.text_encoders || [], current, DEFAULT_WAN_CLIP_NAME));
+  }, [catalog.checkpoints, catalog.vaes, catalog.clip_visions, catalog.text_encoders, isWanMode]);
+
+  useEffect(() => {
     if (
       mode === "pose_only" ||
       mode === "text_only" ||
@@ -250,6 +320,9 @@ function App() {
       body.frames = frames;
       body.wan_unet_high_name = wanUnetHighName;
       body.wan_unet_low_name = wanUnetLowName;
+      body.wan_vae_name = wanVaeName;
+      body.wan_clip_vision_name = wanClipVisionName;
+      body.wan_clip_name = wanClipName;
       body.i2v_resolution = i2vResolution;
       body.i2v_audio_url = i2vAudioURL;
       body.i2v_prompt_extend = i2vPromptExtend;
@@ -573,6 +646,15 @@ function App() {
       }
       if (typeof source.wan_unet_low_name === "string") {
         setWanUnetLowName(source.wan_unet_low_name);
+      }
+      if (typeof source.wan_vae_name === "string") {
+        setWanVaeName(source.wan_vae_name);
+      }
+      if (typeof source.wan_clip_vision_name === "string") {
+        setWanClipVisionName(source.wan_clip_vision_name);
+      }
+      if (typeof source.wan_clip_name === "string") {
+        setWanClipName(source.wan_clip_name);
       }
       if (typeof source.startimg === "string" || typeof source.startimg === "object") {
         setWanStartMedia(mediaFromImportedValue(source.startimg));
@@ -978,8 +1060,40 @@ function App() {
                 <summary style={{ cursor: "pointer", fontWeight: 600 }}>WAN Advanced</summary>
                 <div className="stack" style={{ marginTop: 12 }}>
                   <p className="muted compact">
-                    Low-level video controls. Leave these alone unless you know the WAN workflow expects a different setting.
+                    Low-level video controls and runtime model names. Leave these alone unless you know the WAN workflow expects a different setting.
                   </p>
+                  <div className="inline">
+                    <label>
+                      WAN VAE
+                      <select value={wanVaeName} onChange={(e) => setWanVaeName(e.target.value)}>
+                        {wanVaeOptions.map((name) => (
+                          <option key={`wan-vae-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      WAN CLIP Vision
+                      <select value={wanClipVisionName} onChange={(e) => setWanClipVisionName(e.target.value)}>
+                        {wanClipVisionOptions.map((name) => (
+                          <option key={`wan-clip-vision-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    WAN Text Encoder
+                    <select value={wanClipName} onChange={(e) => setWanClipName(e.target.value)}>
+                      {wanTextEncoderOptions.map((name) => (
+                        <option key={`wan-text-encoder-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="inline">
                     <label>
                       WAN Resolution

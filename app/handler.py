@@ -1235,11 +1235,11 @@ def _apply_wan_lora_chain(prompt: Dict, loras: List[Dict]) -> List:
 
 def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: str, segment_length: int, segment_idx: int) -> None:
     if "39" in prompt:
-        prompt["39"]["inputs"]["vae_name"] = WAN_VAE_NAME
+        prompt["39"]["inputs"]["vae_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
     if "49" in prompt:
-        prompt["49"]["inputs"]["clip_name"] = WAN_CLIP_VISION_NAME
+        prompt["49"]["inputs"]["clip_name"] = str(data.get("wan_clip_vision_name", WAN_CLIP_VISION_NAME)).strip() or WAN_CLIP_VISION_NAME
     if "38" in prompt:
-        prompt["38"]["inputs"]["clip_name"] = WAN_CLIP_NAME
+        prompt["38"]["inputs"]["clip_name"] = str(data.get("wan_clip_name", WAN_CLIP_NAME)).strip() or WAN_CLIP_NAME
     if "37" in prompt:
         prompt["37"]["inputs"]["unet_name"] = str(data.get("wan_unet_high_name", WAN_UNET_HIGH_NAME)).strip() or WAN_UNET_HIGH_NAME
     if "100" in prompt:

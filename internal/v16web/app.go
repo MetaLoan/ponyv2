@@ -66,6 +66,9 @@ type GenerateRequest struct {
 	ReferenceImage      string       `json:"reference_image"`
 	StartImg            string       `json:"startimg"`
 	EndImg              string       `json:"endimg"`
+	WanVaeName          string       `json:"wan_vae_name"`
+	WanClipVisionName   string       `json:"wan_clip_vision_name"`
+	WanClipName         string       `json:"wan_clip_name"`
 	WanUnetHighName     string       `json:"wan_unet_high_name"`
 	WanUnetLowName      string       `json:"wan_unet_low_name"`
 	QwenExtraImage      string       `json:"qwen_extra_image"`
@@ -162,6 +165,9 @@ type CatalogResponse struct {
 	Checkpoints   []CatalogItem `json:"checkpoints"`
 	Loras         []CatalogItem `json:"loras"`
 	UpscaleModels []CatalogItem `json:"upscale_models"`
+	Vaes          []CatalogItem `json:"vaes"`
+	ClipVisions   []CatalogItem `json:"clip_visions"`
+	TextEncoders  []CatalogItem `json:"text_encoders"`
 }
 
 type CatalogItem struct {
@@ -291,6 +297,9 @@ func (a *App) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		Checkpoints:   a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "checkpoints")+"/", "checkpoint"),
 		Loras:         a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "loras")+"/", "lora"),
 		UpscaleModels: a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "upscale_models")+"/", "upscale_model"),
+		Vaes:          a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "vae")+"/", "vae"),
+		ClipVisions:   a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "clip_vision")+"/", "clip_vision"),
+		TextEncoders:  a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "text_encoders")+"/", "text_encoder"),
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -879,6 +888,9 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"startimg":               req.StartImg,
 		"endimg":                 req.EndImg,
 		"frames":                 req.Frames,
+		"wan_vae_name":           req.WanVaeName,
+		"wan_clip_vision_name":    req.WanClipVisionName,
+		"wan_clip_name":          req.WanClipName,
 		"wan_unet_high_name":     req.WanUnetHighName,
 		"wan_unet_low_name":      req.WanUnetLowName,
 		"prompt":                 req.Prompt,
@@ -1783,6 +1795,10 @@ func isAllowedModelFile(name, kind string) bool {
 		return strings.HasSuffix(lower, ".safetensors") || strings.HasSuffix(lower, ".ckpt")
 	case "upscale_model":
 		return strings.HasSuffix(lower, ".pth") || strings.HasSuffix(lower, ".pt")
+	case "vae":
+		return strings.HasSuffix(lower, ".safetensors") || strings.HasSuffix(lower, ".pt") || strings.HasSuffix(lower, ".ckpt")
+	case "clip_vision", "text_encoder":
+		return strings.HasSuffix(lower, ".pt") || strings.HasSuffix(lower, ".safetensors")
 	}
 	return false
 }
