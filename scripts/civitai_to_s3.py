@@ -272,20 +272,26 @@ def download_file(model_version_id: str, token: str, dst_dir: Path) -> Path:
     filename = fetch_download_name(model_version_id, token)
     dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / filename
+    tmp_path: Path | None = None
     with requests.get(
         api_url,
         headers={"Authorization": f"Bearer {token}"},
         stream=True,
         timeout=120,
     ) as resp:
-        resp.raise_for_status()
-        with tempfile.NamedTemporaryFile(delete=False, dir=str(dst_dir), prefix=f".{dst.name}.") as tmp:
-            tmp_path = Path(tmp.name)
-            for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    tmp.write(chunk)
-    os.replace(tmp_path, dst)
-    return dst
+        try:
+            resp.raise_for_status()
+            with tempfile.NamedTemporaryFile(delete=False, dir=str(dst_dir), prefix=f".{dst.name}.") as tmp:
+                tmp_path = Path(tmp.name)
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        tmp.write(chunk)
+            os.replace(tmp_path, dst)
+            return dst
+        except Exception:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+            raise
 
 
 def rename_downloaded_file(local_file: Path, model_version_id: str, token: str) -> Path:
@@ -347,6 +353,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--key-file", default=os.getenv("KEY_FILE", ""), help="optional key.env style file")
     p.add_argument("--s3-key-file", default=os.getenv("S3_KEY_FILE", ""), help="optional s3-credentials.txt style file")
     p.add_argument("--name", default="", help="override the uploaded filename stem")
+    p.add_argument("--keep-local", action="store_true", help="keep the downloaded file after upload")
     return p.parse_args()
 
 
@@ -362,22 +369,27 @@ def main() -> int:
     model_version_id = extract_model_version_id(args.source)
     download_dir = Path(args.download_dir)
 
-    local_file = download_file(model_version_id, token, download_dir)
-    if args.name.strip():
-        desired_suffix = local_file.suffix.lower() or ".safetensors"
-        desired = local_file.with_name(f"{normalize_filename_part(args.name)}{desired_suffix}")
-        if desired.exists() and desired.resolve() != local_file.resolve():
-            desired.unlink()
-        local_file.rename(desired)
-        local_file = desired
-    else:
-        local_file = rename_downloaded_file(local_file, model_version_id, token)
-    key, head = upload_to_s3(local_file, s3_cfg, args.kind)
+    local_file: Path | None = None
+    try:
+        local_file = download_file(model_version_id, token, download_dir)
+        if args.name.strip():
+            desired_suffix = local_file.suffix.lower() or ".safetensors"
+            desired = local_file.with_name(f"{normalize_filename_part(args.name)}{desired_suffix}")
+            if desired.exists() and desired.resolve() != local_file.resolve():
+                desired.unlink()
+            local_file.rename(desired)
+            local_file = desired
+        else:
+            local_file = rename_downloaded_file(local_file, model_version_id, token)
+        key, head = upload_to_s3(local_file, s3_cfg, args.kind)
 
-    print(f"[downloaded] {local_file}")
-    print(f"[uploaded] bucket={s3_cfg['bucket']} key={key}")
-    print(f"[etag] {head.get('ETag')}")
-    print(f"[size] {head.get('ContentLength')}")
+        print(f"[downloaded] {local_file}")
+        print(f"[uploaded] bucket={s3_cfg['bucket']} key={key}")
+        print(f"[etag] {head.get('ETag')}")
+        print(f"[size] {head.get('ContentLength')}")
+    finally:
+        if local_file and local_file.exists() and not args.keep_local:
+            local_file.unlink(missing_ok=True)
     return 0
 
 
