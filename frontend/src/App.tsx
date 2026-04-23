@@ -84,6 +84,7 @@ function App() {
   const [wanUnetHighName, setWanUnetHighName] = useState(DEFAULT_WAN_UNET_HIGH_NAME);
   const [wanUnetLowName, setWanUnetLowName] = useState(DEFAULT_WAN_UNET_LOW_NAME);
   const [wanPreset, setWanPreset] = useState<WanPreset>("manual");
+  const [wanAdvancedOpen, setWanAdvancedOpen] = useState(false);
   const [frames, setFrames] = useState(81);
   const [negativePrompt, setNegativePrompt] = useState(
     "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
@@ -973,6 +974,38 @@ function App() {
                   </button>
                 </div>
               )}
+              <details className="subcard" open={wanAdvancedOpen} onToggle={(e) => setWanAdvancedOpen(e.currentTarget.open)}>
+                <summary style={{ cursor: "pointer", fontWeight: 600 }}>WAN Advanced</summary>
+                <div className="stack" style={{ marginTop: 12 }}>
+                  <p className="muted compact">
+                    Low-level video controls. Leave these alone unless you know the WAN workflow expects a different setting.
+                  </p>
+                  <div className="inline">
+                    <label>
+                      WAN Resolution
+                      <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
+                        <option value="480P">480P</option>
+                        <option value="720P">720P</option>
+                        <option value="1080P">1080P</option>
+                      </select>
+                    </label>
+                    <label>
+                      WAN Audio URL
+                      <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="inline">
+                    <label className="toggle">
+                      <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
+                      Prompt extend
+                    </label>
+                    <label className="toggle">
+                      <input type="checkbox" checked={i2vWatermark} onChange={(e) => setI2VWatermark(e.target.checked)} />
+                      Watermark
+                    </label>
+                  </div>
+                </div>
+              </details>
             </section>
           ) : (
             <section className="card">
@@ -1111,31 +1144,10 @@ function App() {
 
           {isWanMode ? (
             <section className="card">
-              <h2>WAN Video Options</h2>
-              <div className="inline">
-                <label>
-                  WAN Resolution
-                  <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
-                    <option value="480P">480P</option>
-                    <option value="720P">720P</option>
-                    <option value="1080P">1080P</option>
-                  </select>
-                </label>
-                <label>
-                  WAN Audio URL
-                  <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
-                </label>
-              </div>
-              <div className="inline">
-                <label className="toggle">
-                  <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
-                  Prompt extend
-                </label>
-                <label className="toggle">
-                  <input type="checkbox" checked={i2vWatermark} onChange={(e) => setI2VWatermark(e.target.checked)} />
-                  Watermark
-                </label>
-              </div>
+              <h2>WAN Workflow</h2>
+              <p className="muted compact">
+                Core inputs stay above. Advanced video controls are hidden in the WAN Advanced panel.
+              </p>
             </section>
           ) : (
             <section className="card">
