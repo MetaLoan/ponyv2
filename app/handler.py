@@ -190,6 +190,23 @@ def _image_bytes_to_qwen_data_url(blob: bytes) -> Tuple[str, Tuple[int, int]]:
     return f"data:image/png;base64,{encoded}", img.size
 
 
+def _media_to_dashscope_accessible_url(media: str, request_id: str, prefix: str) -> str:
+    media = (media or "").strip()
+    if not media:
+        raise RuntimeError(f"{prefix} media is required")
+    if media.startswith("http://") or media.startswith("https://"):
+        return media
+    s3, s3_cfg = get_r2_client_and_config()
+    if not s3:
+        raise RuntimeError(
+            f"{prefix} media must be a public http(s) URL when R2 is not configured"
+        )
+    blob, content_type = _decode_media_bytes(media)
+    ext = _guess_extension(content_type or "image/png", ".png")
+    key = f"dashscope_inputs/{request_id}/{prefix}_{uuid.uuid4().hex}{ext}"
+    return _upload_bytes_to_r2(s3, s3_cfg, key, blob, content_type or "image/png")
+
+
 def _write_output_bytes(filename: str, blob: bytes) -> Path:
     COMFY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     path = COMFY_OUTPUT_DIR / filename
@@ -1017,10 +1034,11 @@ def _call_dashscope_i2v_extend_any_frame(
     model_name = (model or WAN_EXTEND_ANY_FRAME_MODEL).strip() or WAN_EXTEND_ANY_FRAME_MODEL
     prompt_text = (prompt or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     resolution_text = (resolution or "720P").strip() or "720P"
-    first_input, _ = _media_to_qwen_data_url(first_media)
+    request_id = uuid.uuid4().hex
+    first_input = _media_to_dashscope_accessible_url(first_media, request_id, "first_frame")
     last_input = ""
     if last_media.strip():
-        last_input, _ = _media_to_qwen_data_url(last_media)
+        last_input = _media_to_dashscope_accessible_url(last_media, request_id, "last_frame")
 
     api_url = I2V_API_URL.rstrip("/")
     if not api_url.endswith("/video-synthesis"):
