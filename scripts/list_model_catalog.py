@@ -24,7 +24,7 @@ def allowed(name: str, kind: str) -> bool:
     lower = name.lower()
     if name.startswith("put_"):
         return False
-    if kind in {"checkpoint", "lora"}:
+    if kind in {"checkpoint", "lora", "unet"}:
         return lower.endswith(".safetensors") or lower.endswith(".ckpt")
     if kind == "upscale_model":
         return lower.endswith(".pth") or lower.endswith(".pt")
@@ -59,6 +59,7 @@ def main():
     )
     result = {
         "checkpoints": list_prefix(s3, cfg["bucket"], f"{root_prefix}/checkpoints/", "checkpoint"),
+        "unets": list_prefix(s3, cfg["bucket"], f"{root_prefix}/unet/", "unet"),
         "loras": list_prefix(s3, cfg["bucket"], f"{root_prefix}/loras/", "lora"),
         "upscale_models": list_prefix(s3, cfg["bucket"], f"{root_prefix}/upscale_models/", "upscale_model"),
         "vaes": list_prefix(s3, cfg["bucket"], f"{root_prefix}/vae/", "vae"),

@@ -163,6 +163,7 @@ type GenerateResponse struct {
 
 type CatalogResponse struct {
 	Checkpoints   []CatalogItem `json:"checkpoints"`
+	Unets         []CatalogItem `json:"unets"`
 	Loras         []CatalogItem `json:"loras"`
 	UpscaleModels []CatalogItem `json:"upscale_models"`
 	Vaes          []CatalogItem `json:"vaes"`
@@ -295,6 +296,7 @@ func (a *App) handleCatalog(w http.ResponseWriter, r *http.Request) {
 
 	resp := CatalogResponse{
 		Checkpoints:   a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "checkpoints")+"/", "checkpoint"),
+		Unets:         a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "unet")+"/", "unet"),
 		Loras:         a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "loras")+"/", "lora"),
 		UpscaleModels: a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "upscale_models")+"/", "upscale_model"),
 		Vaes:          a.listCatalog(ctx, path.Join(a.Config.S3RootPrefix, "vae")+"/", "vae"),

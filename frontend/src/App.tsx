@@ -11,6 +11,7 @@ type CatalogItem = {
 
 type CatalogResponse = {
   checkpoints: CatalogItem[];
+  unets: CatalogItem[];
   loras: CatalogItem[];
   upscale_models: CatalogItem[];
   vaes: CatalogItem[];
@@ -89,6 +90,7 @@ function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [catalog, setCatalog] = useState<CatalogResponse>({
     checkpoints: [],
+    unets: [],
     loras: [],
     upscale_models: [],
     vaes: [],
@@ -178,8 +180,8 @@ function App() {
   const [payloadImportError, setPayloadImportError] = useState("");
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
   const wanModelOptions = useMemo(() => {
-    const source = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
-    const pool = source.length > 0 ? source : (catalog.checkpoints || []);
+    const source = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const pool = source.length > 0 ? source : (catalog.unets || []);
     const names = new Set<string>();
     for (const item of pool) {
       if (item.name.trim()) {
@@ -197,7 +199,7 @@ function App() {
       names.add(DEFAULT_WAN_UNET_LOW_NAME);
     }
     return Array.from(names);
-  }, [catalog.checkpoints, wanUnetHighName, wanUnetLowName]);
+  }, [catalog.unets, wanUnetHighName, wanUnetLowName]);
   const wanVaeOptions = useMemo(() => {
     const names = new Set<string>([DEFAULT_WAN_VAE_NAME]);
     for (const item of catalog.vaes || []) {
@@ -282,14 +284,14 @@ function App() {
     if (!isWanMode) {
       return;
     }
-    const wanCheckpoints = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
-    const checkpointSource = wanCheckpoints.length > 0 ? wanCheckpoints : catalog.checkpoints || [];
-    setWanUnetHighName((current) => pickCatalogName(checkpointSource, current, DEFAULT_WAN_UNET_HIGH_NAME));
-    setWanUnetLowName((current) => pickCatalogName(checkpointSource, current, DEFAULT_WAN_UNET_LOW_NAME));
+    const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
+    setWanUnetHighName((current) => pickCatalogName(unetSource, current, DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName((current) => pickCatalogName(unetSource, current, DEFAULT_WAN_UNET_LOW_NAME));
     setWanVaeName((current) => pickCatalogName(catalog.vaes || [], current, DEFAULT_WAN_VAE_NAME));
     setWanClipVisionName((current) => pickCatalogName(catalog.clip_visions || [], current, DEFAULT_WAN_CLIP_VISION_NAME));
     setWanClipName((current) => pickCatalogName(catalog.text_encoders || [], current, DEFAULT_WAN_CLIP_NAME));
-  }, [catalog.checkpoints, catalog.vaes, catalog.clip_visions, catalog.text_encoders, isWanMode]);
+  }, [catalog.unets, catalog.vaes, catalog.clip_visions, catalog.text_encoders, isWanMode]);
 
   useEffect(() => {
     if (
@@ -607,10 +609,10 @@ function App() {
     setFrames(81);
     setWanStartMedia({ kind: "file", file: null, url: "", preview: "" });
     setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
-    const wanCheckpoints = (catalog.checkpoints || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
-    const checkpointSource = wanCheckpoints.length > 0 ? wanCheckpoints : catalog.checkpoints || [];
-    setWanUnetHighName(pickCatalogName(checkpointSource, "", DEFAULT_WAN_UNET_HIGH_NAME));
-    setWanUnetLowName(pickCatalogName(checkpointSource, "", DEFAULT_WAN_UNET_LOW_NAME));
+    const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
+    const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
+    setWanUnetHighName(pickCatalogName(unetSource, "", DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName(pickCatalogName(unetSource, "", DEFAULT_WAN_UNET_LOW_NAME));
     if (preset === "realistic_video") {
       setLoras([]);
       setEnableLora(false);
