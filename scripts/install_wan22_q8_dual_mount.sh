@@ -29,6 +29,13 @@ if [[ -z "${CIVITAI_TOKEN:-${civitai:-}}" ]]; then
   exit 1
 fi
 
+if ! python3 - <<'PY' >/dev/null 2>&1; then
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("requests") else 1)
+PY
+  python3 -m pip install --quiet requests
+fi
+
 python3 "$PY_SCRIPT" "$Q8H_URL" --kind checkpoint --target-dir "$TARGET_DIR" --name "$Q8H_NAME" --key-file "$KEY_FILE"
 python3 "$PY_SCRIPT" "$Q8L_URL" --kind checkpoint --target-dir "$TARGET_DIR" --name "$Q8L_NAME" --key-file "$KEY_FILE"
 
