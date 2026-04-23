@@ -8,8 +8,8 @@ HF_BASE_22="https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/
 
 Q8H_NAME="${Q8H_NAME:-WAN2.2-NSFW-FastMove-V2-H.safetensors}"
 Q8L_NAME="${Q8L_NAME:-WAN2.2-NSFW-FastMove-V2-L.safetensors}"
-Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2477539}"
-Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2477548}"
+Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2376670}"
+Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2376720}"
 VAE_NAME="${VAE_NAME:-wan_2.1_vae.safetensors}"
 VAE_URL="${VAE_URL:-$HF_BASE_21/vae/wan_2.1_vae.safetensors}"
 TEXT_ENCODER_NAME="${TEXT_ENCODER_NAME:-umt5_xxl_fp8_e4m3fn_scaled.safetensors}"

@@ -3,8 +3,8 @@ set -euo pipefail
 
 TARGET_ROOT="${TARGET_ROOT:-/workspace/runpod-slim/ComfyUI/models}"
 KEY_FILE="${KEY_FILE:-/workspace/key.env}"
-Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2540892}"
-Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2540896}"
+Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2376670}"
+Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2376720}"
 Q8H_NAME="${Q8H_NAME:-WAN2.2-NSFW-FastMove-V2-H.safetensors}"
 Q8L_NAME="${Q8L_NAME:-WAN2.2-NSFW-FastMove-V2-L.safetensors}"
 VAE_URL="${VAE_URL:-https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors}"
