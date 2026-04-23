@@ -1321,17 +1321,21 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         raise RuntimeError("WAN Comfy workflow does not yet support endimg; use the DashScope backend for endimg jobs")
 
     frames = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
-    segment_count = max(1, (frames + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1) // WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    frames = max(frames, 2)
+    segment_count = max(1, (frames - 1 + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 2) // (WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1))
+    
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     negative_prompt = str(data.get("negative_prompt", "")).strip()
     loras = [x for x in (data.get("loras") or []) if isinstance(x, dict) and str(x.get("name", "")).strip()]
 
     segment_paths: List[Path] = []
     segment_records: List[Dict] = []
+    all_frame_paths: List[Path] = []
+    total_collected = 0
     current_start = str(data.get("startimg", "")).strip()
 
     for idx in range(segment_count):
-        segment_length = min(WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT, frames - idx * WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+        segment_length = WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT
         prompt = load_json(WAN_WORKFLOW_API_PATH)
         start_image_filename = resolve_media_to_comfy_filename(current_start, f"wan_start_{request_id}_{idx + 1:02d}")
         if loras:
@@ -1349,7 +1353,12 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             prompt.pop("150", None)
         if "151" in prompt:
             prompt.pop("151", None)
-        _apply_wan_workflow_defaults(prompt, data, start_image_filename, segment_length, idx + 1)
+            
+        data_copy = dict(data)
+        base_seed = int(data_copy.get("seed", 0) or 0)
+        data_copy["seed"] = base_seed + idx
+        
+        _apply_wan_workflow_defaults(prompt, data_copy, start_image_filename, segment_length, idx + 1)
         if "6" in prompt:
             prompt["6"]["inputs"]["text"] = prompt_text
         if "7" in prompt:
@@ -1362,30 +1371,42 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         if not frame_images:
             raise RuntimeError(f"No frames produced for WAN segment {idx + 1}")
 
-        frame_paths: List[Path] = []
-        for frame_idx, img_desc in enumerate(frame_images, start=1):
-            raw = _read_output_image(img_desc)
-            frame_path = _write_output_bytes(f"wan_{request_id}_{idx + 1:02d}_{frame_idx:03d}.png", raw)
-            frame_paths.append(frame_path)
-
-        segment_path = COMFY_OUTPUT_DIR / f"wan_{request_id}_{idx + 1:02d}.mp4"
-        _make_video_from_frames(frame_paths, segment_path, fps=WAN_VIDEO_FPS)
-        segment_paths.append(segment_path)
-        segment_records.append(
-            {
-                "filename": segment_path.name,
-                "subfolder": "",
-                "type": "output",
-                "content_type": "video/mp4",
-            }
-        )
-
         last_frame_bytes = _read_output_image(frame_images[-1])
         current_start, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
 
+        frame_paths: List[Path] = []
+        usable_images = frame_images[1:] if idx > 0 else frame_images
+        needed = frames - total_collected
+        if needed < len(usable_images):
+            usable_images = usable_images[:needed]
+            
+        for frame_idx, img_desc in enumerate(usable_images, start=1):
+            raw = _read_output_image(img_desc)
+            frame_path = _write_output_bytes(f"wan_{request_id}_seg{idx + 1:02d}_f{frame_idx:03d}.png", raw)
+            frame_paths.append(frame_path)
+            all_frame_paths.append(frame_path)
+
+        segment_path = COMFY_OUTPUT_DIR / f"wan_{request_id}_{idx + 1:02d}.mp4"
+        if frame_paths:
+            _make_video_from_frames(frame_paths, segment_path, fps=WAN_VIDEO_FPS)
+            segment_paths.append(segment_path)
+            segment_records.append(
+                {
+                    "filename": segment_path.name,
+                    "subfolder": "",
+                    "type": "output",
+                    "content_type": "video/mp4",
+                }
+            )
+
+        total_collected += len(usable_images)
+        if total_collected >= frames:
+            break
+
     merged_filename = f"wan_{request_id}_merged.mp4"
     merged_path = COMFY_OUTPUT_DIR / merged_filename
-    _concat_video_segments(segment_paths, merged_path)
+    if all_frame_paths:
+        _make_video_from_frames(all_frame_paths, merged_path, fps=WAN_VIDEO_FPS)
 
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
