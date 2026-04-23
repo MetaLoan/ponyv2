@@ -86,6 +86,17 @@ function pickCatalogName(items: CatalogItem[], preferred: string, fallback: stri
   return names[0] || fallback;
 }
 
+function pickCatalogDefault(items: CatalogItem[], fallback: string, preferred = ""): string {
+  const names = items.map((item) => item.name.trim()).filter((name) => name !== "");
+  if (fallback.trim() && names.includes(fallback.trim())) {
+    return fallback.trim();
+  }
+  if (preferred.trim() && names.includes(preferred.trim())) {
+    return preferred.trim();
+  }
+  return names[0] || fallback;
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [catalog, setCatalog] = useState<CatalogResponse>({
@@ -286,11 +297,11 @@ function App() {
     }
     const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
-    setWanUnetHighName((current) => pickCatalogName(unetSource, current, DEFAULT_WAN_UNET_HIGH_NAME));
-    setWanUnetLowName((current) => pickCatalogName(unetSource, current, DEFAULT_WAN_UNET_LOW_NAME));
-    setWanVaeName((current) => pickCatalogName(catalog.vaes || [], current, DEFAULT_WAN_VAE_NAME));
-    setWanClipVisionName((current) => pickCatalogName(catalog.clip_visions || [], current, DEFAULT_WAN_CLIP_VISION_NAME));
-    setWanClipName((current) => pickCatalogName(catalog.text_encoders || [], current, DEFAULT_WAN_CLIP_NAME));
+    setWanUnetHighName((current) => pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_HIGH_NAME, current));
+    setWanUnetLowName((current) => pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_LOW_NAME, current));
+    setWanVaeName((current) => pickCatalogDefault(catalog.vaes || [], DEFAULT_WAN_VAE_NAME, current));
+    setWanClipVisionName((current) => pickCatalogDefault(catalog.clip_visions || [], DEFAULT_WAN_CLIP_VISION_NAME, current));
+    setWanClipName((current) => pickCatalogDefault(catalog.text_encoders || [], DEFAULT_WAN_CLIP_NAME, current));
   }, [catalog.unets, catalog.vaes, catalog.clip_visions, catalog.text_encoders, isWanMode]);
 
   useEffect(() => {
@@ -611,8 +622,8 @@ function App() {
     setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
     const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
-    setWanUnetHighName(pickCatalogName(unetSource, "", DEFAULT_WAN_UNET_HIGH_NAME));
-    setWanUnetLowName(pickCatalogName(unetSource, "", DEFAULT_WAN_UNET_LOW_NAME));
+    setWanUnetHighName(pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_HIGH_NAME));
+    setWanUnetLowName(pickCatalogDefault(unetSource, DEFAULT_WAN_UNET_LOW_NAME));
     if (preset === "realistic_video") {
       setLoras([]);
       setEnableLora(false);
