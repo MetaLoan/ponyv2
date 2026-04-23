@@ -1294,9 +1294,28 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
         prompt["6"]["inputs"]["text"] = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     if "7" in prompt:
         prompt["7"]["inputs"]["text"] = str(data.get("negative_prompt", "")).strip()
+    width = int(data.get("width", 0))
+    height = int(data.get("height", 0))
+    if not width or not height:
+        try:
+            input_path = COMFY_INPUT_DIR / current_start_image
+            with Image.open(input_path) as img:
+                img_w, img_h = img.size
+            res_str = str(data.get("i2v_resolution", "720P")).strip().upper()
+            is_landscape = img_w > img_h
+            if res_str == "1080P":
+                width, height = (1920, 1088) if is_landscape else (1088, 1920)
+            elif res_str == "720P":
+                width, height = (1280, 720) if is_landscape else (720, 1280)
+            else:
+                width, height = (832, 480) if is_landscape else (480, 832)
+        except Exception:
+            width = int(WAN_DEFAULT_WIDTH)
+            height = int(WAN_DEFAULT_HEIGHT)
+
     if "50" in prompt:
-        prompt["50"]["inputs"]["width"] = int(data.get("width", WAN_DEFAULT_WIDTH) or WAN_DEFAULT_WIDTH)
-        prompt["50"]["inputs"]["height"] = int(data.get("height", WAN_DEFAULT_HEIGHT) or WAN_DEFAULT_HEIGHT)
+        prompt["50"]["inputs"]["width"] = width
+        prompt["50"]["inputs"]["height"] = height
         prompt["50"]["inputs"]["length"] = int(segment_length)
         prompt["50"]["inputs"]["batch_size"] = 1
 
