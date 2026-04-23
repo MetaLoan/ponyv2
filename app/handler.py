@@ -1291,10 +1291,25 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
         prompt["50"]["inputs"]["height"] = int(data.get("height", WAN_DEFAULT_HEIGHT) or WAN_DEFAULT_HEIGHT)
         prompt["50"]["inputs"]["length"] = int(segment_length)
         prompt["50"]["inputs"]["batch_size"] = 1
+
+    base_steps = int(data.get("base_steps", 4))
+    steps = int(data.get("steps", 4))
+    total_steps = base_steps + steps
+    base_cfg = float(data.get("base_cfg", 2.0))
+    cfg = float(data.get("cfg", 1.0))
+
     if "102" in prompt:
         prompt["102"]["inputs"]["noise_seed"] = int(data.get("seed", 0) or 0)
+        prompt["102"]["inputs"]["steps"] = total_steps
+        prompt["102"]["inputs"]["end_at_step"] = base_steps
+        prompt["102"]["inputs"]["cfg"] = base_cfg
     if "103" in prompt:
         prompt["103"]["inputs"]["noise_seed"] = int(data.get("seed", 0) or 0)
+        prompt["103"]["inputs"]["steps"] = total_steps
+        prompt["103"]["inputs"]["start_at_step"] = base_steps
+        prompt["103"]["inputs"]["end_at_step"] = total_steps
+        prompt["103"]["inputs"]["cfg"] = cfg
+        
     if "47" in prompt:
         prompt["47"]["inputs"]["filename_prefix"] = f"wan_{data.get('request_id', 'wan')}_{segment_idx:02d}"
 
