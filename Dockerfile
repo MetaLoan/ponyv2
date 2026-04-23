@@ -19,7 +19,7 @@ RUN printf '%s\n' "$GIT_SHA" >/workspace/runpod-slim/.image_revision
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     build-essential \
-    git curl ca-certificates libgl1 libglib2.0-0 && \
+    git curl ca-certificates libgl1 libglib2.0-0 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
@@ -38,7 +38,14 @@ RUN set -eux; \
     mkdir -p /workspace/runpod-slim/ComfyUI/custom_nodes; \
     for pair in \
       "https://github.com/Fannovel16/comfyui_controlnet_aux.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux" \
-      "https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI"; do \
+      "https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI" \
+      "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite" \
+      "https://github.com/kijai/ComfyUI-KJNodes.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes" \
+      "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation" \
+      "https://github.com/yolain/ComfyUI-Easy-Use.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Easy-Use" \
+      "https://github.com/rgthree/rgthree-comfy.git /workspace/runpod-slim/ComfyUI/custom_nodes/rgthree-comfy" \
+      "https://github.com/chrisgoringe/cg-use-everywhere.git /workspace/runpod-slim/ComfyUI/custom_nodes/cg-use-everywhere" \
+      "https://github.com/ltdrdata/ComfyUI-Manager.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Manager"; do \
       url="$(echo "$pair" | awk '{print $1}')"; \
       dst="$(echo "$pair" | awk '{print $2}')"; \
       ok=0; \
@@ -50,8 +57,19 @@ RUN set -eux; \
       [ "$ok" = "1" ]; \
     done
 
+RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
+    "imageio[ffmpeg]" \
+    "opencv-python" \
+    "accelerate"
+
 RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
-    python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt
+    python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt; fi && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt; fi && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/requirements.txt; fi && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Easy-Use/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Easy-Use/requirements.txt; fi && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/rgthree-comfy/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/rgthree-comfy/requirements.txt; fi && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/cg-use-everywhere/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/cg-use-everywhere/requirements.txt; fi
 # Global fallback deps for node coexistence.
 RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-binary \
     "facexlib==0.3.0" \
@@ -78,6 +96,7 @@ COPY scripts/install_v16_models.sh /workspace/runpod-slim/scripts/install_v16_mo
 COPY workflows/pulid_sdxl_workflow_v3.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3.json
 COPY workflows/pulid_sdxl_workflow_v3_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json
 COPY workflows/pulid_sdxl_workflow_web_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_web_api.json
+COPY workflows/wan2_2_i2v_extend_any_frame_api.json /workspace/runpod-slim/ComfyUI/wan2_2_i2v_extend_any_frame_api.json
 
 RUN chmod +x /workspace/runpod-slim/scripts/install_v16_models.sh
 

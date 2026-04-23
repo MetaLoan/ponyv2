@@ -29,15 +29,16 @@
 
 ### 功能目标
 
-需要支持以下 7 类能力：
+需要支持以下 8 类能力：
 
 1. 传人像图 + 提示词，完整走完 2 阶段生图
 2. 传人像图 + Pose 图解析 + 提示词生图后再换脸
 3. 只传 Pose 图解析，根据提示词生图
 4. 不传任何参考图，只传提示词直接生图
 5. 通过 DashScope Qwen 做换脸后处理
-6. 串联开关 LoRA 节点、开关 4x 放大节点
-7. 调整所有核心节点参数，包括种子、分辨率、批量、权重、步数、采样器、ControlNet 强度等
+6. 上传 face 图和 pose 图，直接用 Qwen 做融合
+7. 串联开关 LoRA 节点、开关 4x 放大节点
+8. 调整所有核心节点参数，包括种子、分辨率、批量、权重、步数、采样器、ControlNet 强度等
 
 ### 交付目标
 
@@ -299,8 +300,9 @@
 - `qwen_size`
 
 说明：
-- `qwen_swap_prompt` 用于描述换脸融合要求
-- `qwen_model` 默认 `qwen-image-edit-max`
+- `qwen_swap_prompt` 用于描述换脸融合要求，默认会强调只融合脸部、不改变图1的沙滩环境
+- `qwen_pose_fusion` 直接复用 `prompt` 作为融合模板，默认会强调保留 pose 图并只融合脸部
+- `qwen_model` 默认 `qwen-image-2.0-pro`
 - `qwen_size` 可选，格式为 `宽*高`
 - `qwen_extra_image` 是可选第三张图，用于扩展融合参考
 - 模式 E 下前端应展示这些参数
@@ -427,13 +429,16 @@
 ```json
 {
   "input": {
-    "mode": "dual_pass_auto_pose | pose_then_face_swap | pose_only | text_only | qwen_swap_face",
+    "mode": "dual_pass_auto_pose | pose_then_face_swap | pose_only | text_only | qwen_swap_face | qwen_pose_fusion | wan2_2_i2v_extend_any_frame",
     "reference_image": "base64_or_url",
     "pose_image": "base64_or_url",
+    "startimg": "base64_or_url",
+    "endimg": "base64_or_url",
     "prompt": "text",
+    "frames": 81,
     "negative_prompt": "text",
     "qwen_swap_prompt": "text",
-    "qwen_model": "qwen-image-edit-max",
+    "qwen_model": "qwen-image-2.0-pro",
     "qwen_size": "1024*1536"
   }
 }
@@ -485,6 +490,42 @@
   - `pose_image`
 - 默认：
   - `enable_pulid=false`
+
+`qwen_pose_fusion`
+- 必填：
+  - `reference_image`
+  - `pose_image`
+  - `prompt`
+- 可选：
+  - `negative_prompt`
+  - `qwen_model`
+  - `qwen_size`
+- 不应要求：
+  - `qwen_extra_image`
+- 默认：
+  - `enable_pulid=false`
+
+`wan2_2_i2v_extend_any_frame`
+- 必填：
+  - `startimg`
+  - `prompt`
+  - `frames`
+- 可选：
+  - `endimg`
+  - `negative_prompt`
+  - `i2v_resolution`
+  - `i2v_prompt_extend`
+  - `i2v_watermark`
+- 仍然保留：
+  - `enable_lora`
+  - `loras[]`
+- 不应要求：
+  - `reference_image`
+  - `pose_image`
+- 默认：
+  - `enable_pulid=false`
+  - `enable_upscale=false`
+  - `enable_i2v=false`
 
 ## handler / workflow 改造影响
 

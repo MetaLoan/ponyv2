@@ -132,12 +132,35 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
     "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux"
   ensure_git_repo "https://github.com/cubiq/PuLID_ComfyUI.git" \
     "$CUSTOM_NODES_ROOT/PuLID_ComfyUI"
+  ensure_git_repo "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-VideoHelperSuite"
+  ensure_git_repo "https://github.com/kijai/ComfyUI-KJNodes.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-KJNodes"
+  ensure_git_repo "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-Frame-Interpolation"
+  ensure_git_repo "https://github.com/yolain/ComfyUI-Easy-Use.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-Easy-Use"
+  ensure_git_repo "https://github.com/rgthree/rgthree-comfy.git" \
+    "$CUSTOM_NODES_ROOT/rgthree-comfy"
+  ensure_git_repo "https://github.com/chrisgoringe/cg-use-everywhere.git" \
+    "$CUSTOM_NODES_ROOT/cg-use-everywhere"
+  ensure_git_repo "https://github.com/ltdrdata/ComfyUI-Manager.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-Manager"
 
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/PuLID_ComfyUI/requirements.txt"
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-VideoHelperSuite/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-KJNodes/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-Frame-Interpolation/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-Easy-Use/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/rgthree-comfy/requirements.txt"
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/cg-use-everywhere/requirements.txt"
 
   echo "[PIP ] extra runtime deps"
   python3 -m pip install --no-cache-dir --prefer-binary \
+    "imageio[ffmpeg]" \
+    "opencv-python" \
+    "accelerate" \
     "facexlib==0.3.0" \
     "ftfy==6.3.1" \
     "timm==1.0.26" \

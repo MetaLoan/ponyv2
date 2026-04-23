@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_edit_face";
+type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame";
 
 type CatalogItem = {
   name: string;
@@ -46,9 +46,13 @@ const defaultLora = (): LoraRow => ({
 });
 
 const DEFAULT_QWEN_SWAP_PROMPT =
-  "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。";
+  "以图1为最终画面底图，严格保留图1的人物姿势、构图、服装、光照、背景和沙滩环境；仅将图2中的面部特征自然融合到图1人物脸上，保持真实自然、五官清晰、肤质统一；图3如存在，仅作为辅助参考，不要改变其他区域。";
+const DEFAULT_QWEN_POSE_FUSION_PROMPT =
+  "以图1的pose图作为最终构图底图，严格保留人物姿势、肢体角度、镜头、服装、场景和光照；将图2的face图中的面部身份特征自然融合到图1人物脸上；保持五官清晰、肤质统一、真实摄影感，不要改动背景、衣服、身体姿态或镜头结构，融合结果要自然连贯。";
 const DEFAULT_QWEN_EDIT_PROMPT =
   "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}";
+const DEFAULT_WAN_EXTEND_PROMPT =
+  "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，动作自然连贯，镜头稳定，细节清晰，电影感成片";
 
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -62,15 +66,20 @@ function App() {
   const [referenceMedia, setReferenceMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [poseMedia, setPoseMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [qwenExtraMedia, setQwenExtraMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [wanStartMedia, setWanStartMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [wanEndMedia, setWanEndMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [prompt, setPrompt] = useState(
-    "masterpiece, best quality, ultra detailed, 8k raw photo, photorealistic, sharp focus, intricate details, rich skin texture, subsurface scattering, glossy skin, realistic anatomy, depth of field, volumetric lighting,"
+    "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，细节清晰，人物自然融入环境，photorealistic, best quality, ultra detailed"
   );
+  const [qwenPoseFusionPrompt, setQwenPoseFusionPrompt] = useState(DEFAULT_QWEN_POSE_FUSION_PROMPT);
+  const [wanExtendPrompt, setWanExtendPrompt] = useState(DEFAULT_WAN_EXTEND_PROMPT);
+  const [frames, setFrames] = useState(81);
   const [negativePrompt, setNegativePrompt] = useState(
     "bad anatomy, poorly drawn hands, deformed hands, mutated hands, extra fingers, fused fingers, bad hands, blurry, low quality, worst quality, lowres, text, watermark, censored, ugly, deformed, extra limbs, bad proportions, open mouth, tongue out, tongue visible, saliva, oral sex, blowjob, fellatio, penis, any male genital, ahegao, rolling eyes"
   );
   const [qwenSwapPrompt, setQwenSwapPrompt] = useState(DEFAULT_QWEN_SWAP_PROMPT);
   const [qwenEditPrompt, setQwenEditPrompt] = useState(DEFAULT_QWEN_EDIT_PROMPT);
-  const [qwenModel, setQwenModel] = useState("qwen-image-edit-max");
+  const [qwenModel, setQwenModel] = useState("qwen-image-2.0-pro");
   const [qwenSize, setQwenSize] = useState("");
   const [ckptName, setCkptName] = useState("SDXL_Photorealistic_Mix_nsfw.safetensors");
   const [width, setWidth] = useState(832);
@@ -126,6 +135,7 @@ function App() {
   const [error, setError] = useState("");
   const [payloadJsonText, setPayloadJsonText] = useState("");
   const [payloadImportError, setPayloadImportError] = useState("");
+  const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
 
   useEffect(() => {
     void (async () => {
@@ -165,7 +175,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face" || mode === "qwen_edit_face") {
+    if (
+      mode === "pose_only" ||
+      mode === "text_only" ||
+      mode === "qwen_swap_face" ||
+      mode === "qwen_pose_fusion" ||
+      mode === "qwen_edit_face" ||
+      mode === "wan2_2_i2v_extend_any_frame"
+    ) {
       setEnablePulid(false);
     } else if (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap") {
       setEnablePulid(true);
@@ -182,66 +199,85 @@ function App() {
             strength_clip,
           }))
       : [];
+    const activePrompt =
+      mode === "qwen_pose_fusion" ? qwenPoseFusionPrompt : isWanMode ? wanExtendPrompt : prompt;
     const body: Record<string, unknown> = {
       mode,
-      prompt,
+      prompt: activePrompt,
       negative_prompt: negativePrompt,
-      width,
-      height,
-      batch_size: batchSize,
-      ckpt_name: ckptName,
-      base_steps: baseSteps,
-      base_seed: baseSeed,
-      base_cfg: baseCfg,
-      base_sampler_name: baseSamplerName,
-      base_scheduler: baseScheduler,
-      base_denoise: baseDenoise,
-      steps,
-      seed,
-      cfg,
-      sampler_name: samplerName,
-      scheduler,
-      denoise,
-      enable_pulid: enablePulid,
-      pulid_weight: pulidWeight,
-      pulid_start_at: pulidStartAt,
-      pulid_end_at: pulidEndAt,
-      pulid_method: pulidMethod,
-      cn_depth_strength: cnDepthStrength,
-      cn_depth_start_percent: cnDepthStartPercent,
-      cn_depth_end_percent: cnDepthEndPercent,
-      cn_pose_strength: cnPoseStrength,
-      cn_pose_start_percent: cnPoseStartPercent,
-      cn_pose_end_percent: cnPoseEndPercent,
       enable_lora: enableLora,
       loras: cleanLoras,
-      enable_upscale: enableUpscale,
-      upscale_model_name: upscaleModelName,
-      keep_intermediate: keepIntermediate,
-      enable_i2v: enableI2V,
-      i2v_prompt: i2vPrompt,
-      i2v_model: i2vModel,
-      i2v_resolution: i2vResolution,
-      i2v_duration: i2vDuration,
-      i2v_seed: i2vSeed,
-      i2v_negative_prompt: i2vNegativePrompt,
-      i2v_audio_url: i2vAudioURL,
-      i2v_prompt_extend: i2vPromptExtend,
-      i2v_watermark: i2vWatermark,
-      output_format: outputFormat,
-      jpg_quality: jpgQuality,
     };
+    if (isWanMode) {
+      body.startimg = mediaToPayloadValue(wanStartMedia);
+      const wanEndValue = mediaToPayloadValue(wanEndMedia);
+      if (wanEndValue) {
+        body.endimg = wanEndValue;
+      }
+      body.frames = frames;
+      body.i2v_resolution = i2vResolution;
+      body.i2v_audio_url = i2vAudioURL;
+      body.i2v_prompt_extend = i2vPromptExtend;
+      body.i2v_watermark = i2vWatermark;
+    } else {
+      body.width = width;
+      body.height = height;
+      body.batch_size = batchSize;
+      body.ckpt_name = ckptName;
+      body.base_steps = baseSteps;
+      body.base_seed = baseSeed;
+      body.base_cfg = baseCfg;
+      body.base_sampler_name = baseSamplerName;
+      body.base_scheduler = baseScheduler;
+      body.base_denoise = baseDenoise;
+      body.steps = steps;
+      body.seed = seed;
+      body.cfg = cfg;
+      body.sampler_name = samplerName;
+      body.scheduler = scheduler;
+      body.denoise = denoise;
+      body.enable_pulid = enablePulid;
+      body.pulid_weight = pulidWeight;
+      body.pulid_start_at = pulidStartAt;
+      body.pulid_end_at = pulidEndAt;
+      body.pulid_method = pulidMethod;
+      body.cn_depth_strength = cnDepthStrength;
+      body.cn_depth_start_percent = cnDepthStartPercent;
+      body.cn_depth_end_percent = cnDepthEndPercent;
+      body.cn_pose_strength = cnPoseStrength;
+      body.cn_pose_start_percent = cnPoseStartPercent;
+      body.cn_pose_end_percent = cnPoseEndPercent;
+      body.enable_upscale = enableUpscale;
+      body.upscale_model_name = upscaleModelName;
+      body.keep_intermediate = keepIntermediate;
+      body.enable_i2v = enableI2V;
+      body.i2v_prompt = i2vPrompt;
+      body.i2v_model = i2vModel;
+      body.i2v_resolution = i2vResolution;
+      body.i2v_duration = i2vDuration;
+      body.i2v_seed = i2vSeed;
+      body.i2v_negative_prompt = i2vNegativePrompt;
+      body.i2v_audio_url = i2vAudioURL;
+      body.i2v_prompt_extend = i2vPromptExtend;
+      body.i2v_watermark = i2vWatermark;
+      body.output_format = outputFormat;
+      body.jpg_quality = jpgQuality;
+    }
     const referenceImageValue = mediaToPayloadValue(referenceMedia);
     const poseImageValue = mediaToPayloadValue(poseMedia);
     const qwenExtraImageValue = mediaToPayloadValue(qwenExtraMedia);
-    if (referenceImageValue && (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face")) {
+    if (referenceImageValue && (mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face" || mode === "qwen_pose_fusion")) {
       body.reference_image = referenceImageValue;
     }
-    if (poseImageValue && (mode === "pose_then_face_swap" || mode === "pose_only")) {
+    if (poseImageValue && (mode === "pose_then_face_swap" || mode === "pose_only" || mode === "qwen_pose_fusion")) {
       body.pose_image = poseImageValue;
     }
     if (qwenExtraImageValue && mode === "qwen_swap_face") {
       body.qwen_extra_image = qwenExtraImageValue;
+    }
+    if (mode === "qwen_pose_fusion") {
+      body.reference_image = referenceImageValue;
+      body.pose_image = poseImageValue;
     }
     if (mode === "qwen_swap_face") {
       body.qwen_swap_prompt = qwenSwapPrompt;
@@ -256,13 +292,23 @@ function App() {
     return body;
   }, [
     mode,
+    isWanMode,
     prompt,
+    qwenPoseFusionPrompt,
     qwenSwapPrompt,
     qwenEditPrompt,
+    wanExtendPrompt,
     qwenModel,
     qwenSize,
-    qwenExtraMedia,
     negativePrompt,
+    wanStartMedia,
+    wanEndMedia,
+    frames,
+    qwenExtraMedia,
+    i2vResolution,
+    i2vAudioURL,
+    i2vPromptExtend,
+    i2vWatermark,
     width,
     height,
     batchSize,
@@ -273,9 +319,6 @@ function App() {
     baseDenoise,
     baseSamplerName,
     baseScheduler,
-    referenceMedia,
-    poseMedia,
-    qwenExtraMedia,
     steps,
     seed,
     cfg,
@@ -293,23 +336,22 @@ function App() {
     cnPoseStrength,
     cnPoseStartPercent,
     cnPoseEndPercent,
-    enableLora,
-    loras,
     enableUpscale,
     upscaleModelName,
     keepIntermediate,
     enableI2V,
     i2vPrompt,
     i2vModel,
-    i2vResolution,
     i2vDuration,
     i2vSeed,
     i2vNegativePrompt,
-    i2vAudioURL,
-    i2vPromptExtend,
-    i2vWatermark,
     outputFormat,
     jpgQuality,
+    referenceMedia,
+    poseMedia,
+    qwenExtraMedia,
+    enableLora,
+    loras,
   ]);
 
   const modeSummary = {
@@ -318,7 +360,9 @@ function App() {
     pose_only: "Pose image + prompt. Pose-guided generation without PuLID face swap.",
     text_only: "Prompt only. No reference image, no pose image, no PuLID.",
     qwen_swap_face: "Base image is generated first, then Qwen uses reference face image and optional image 3 for face swap.",
+    qwen_pose_fusion: "Pose image + face image + prompt. Qwen fuses the face directly onto the pose image.",
     qwen_edit_face: "Base image is generated first, then Qwen edits the face directly from the prompt without a reference face image.",
+    wan2_2_i2v_extend_any_frame: "Start image + optional end image + prompt + frame count. Wan generates 81-frame segments, then merges them into one final video.",
   }[mode];
 
   async function onRenderWorkflow() {
@@ -342,6 +386,18 @@ function App() {
         if (qwenExtraMedia.file || qwenExtraMedia.url.trim()) {
           body.qwen_extra_image = await resolveMedia(qwenExtraMedia);
         }
+      }
+      if (mode === "qwen_pose_fusion") {
+        body.reference_image = await resolveMedia(referenceMedia);
+        body.pose_image = await resolveMedia(poseMedia);
+      }
+      if (mode === "wan2_2_i2v_extend_any_frame") {
+        body.startimg = await resolveMedia(wanStartMedia);
+        const wanEndValue = await resolveOptionalMedia(wanEndMedia);
+        if (wanEndValue) {
+          body.endimg = wanEndValue;
+        }
+        body.frames = frames;
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
         body.pose_image = await resolveMedia(poseMedia);
@@ -371,12 +427,21 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose" | "qwenExtra", patch: Partial<MediaState>) {
-    const setter = which === "reference" ? setReferenceMedia : which === "pose" ? setPoseMedia : setQwenExtraMedia;
+  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", patch: Partial<MediaState>) {
+    const setter =
+      which === "reference"
+        ? setReferenceMedia
+        : which === "pose"
+          ? setPoseMedia
+          : which === "qwenExtra"
+            ? setQwenExtraMedia
+            : which === "wanStart"
+              ? setWanStartMedia
+              : setWanEndMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose" | "qwenExtra", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -386,7 +451,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose" | "qwenExtra", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -414,7 +479,13 @@ function App() {
       }
 
       if (typeof source.prompt === "string") {
-        setPrompt(source.prompt);
+        if (source.mode === "qwen_pose_fusion") {
+          setQwenPoseFusionPrompt(source.prompt);
+        } else if (source.mode === "wan2_2_i2v_extend_any_frame") {
+          setWanExtendPrompt(source.prompt);
+        } else {
+          setPrompt(source.prompt);
+        }
       }
       if (typeof source.negative_prompt === "string") {
         setNegativePrompt(source.negative_prompt);
@@ -424,6 +495,15 @@ function App() {
       }
       if (typeof source.qwen_edit_prompt === "string") {
         setQwenEditPrompt(source.qwen_edit_prompt);
+      }
+      if (typeof source.frames === "number") {
+        setFrames(source.frames);
+      }
+      if (typeof source.startimg === "string" || typeof source.startimg === "object") {
+        setWanStartMedia(mediaFromImportedValue(source.startimg));
+      }
+      if (typeof source.endimg === "string" || typeof source.endimg === "object") {
+        setWanEndMedia(mediaFromImportedValue(source.endimg));
       }
       if (typeof source.qwen_model === "string") {
         setQwenModel(source.qwen_model);
@@ -612,7 +692,9 @@ function App() {
             <option value="pose_only">pose_only: pose-guided only</option>
             <option value="text_only">text_only: prompt only</option>
             <option value="qwen_swap_face">qwen_swap_face: prompt then Qwen face swap</option>
+            <option value="qwen_pose_fusion">qwen_pose_fusion: pose + face Qwen fusion</option>
             <option value="qwen_edit_face">qwen_edit_face: prompt then Qwen face edit</option>
+            <option value="wan2_2_i2v_extend_any_frame">wan2.2 i2v-extend-any-frame</option>
           </select>
           <p className="muted compact">{modeSummary}</p>
         </section>
@@ -620,6 +702,16 @@ function App() {
         {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face") && (
           <MediaCard
             title={mode === "qwen_swap_face" ? "Qwen Reference Face Image" : "Reference Image"}
+            media={referenceMedia}
+            onKindChange={(kind) => updateMedia("reference", { kind })}
+            onFileChange={(e) => onFileChange("reference", e)}
+            onURLChange={(value) => onURLChange("reference", value)}
+          />
+        )}
+
+        {mode === "qwen_pose_fusion" && (
+          <MediaCard
+            title="Qwen Face Image"
             media={referenceMedia}
             onKindChange={(kind) => updateMedia("reference", { kind })}
             onFileChange={(e) => onFileChange("reference", e)}
@@ -666,12 +758,51 @@ function App() {
             onURLChange={(value) => onURLChange("pose", value)}
           />
         )}
+
+        {mode === "qwen_pose_fusion" && (
+          <MediaCard
+            title="Qwen Pose Image"
+            media={poseMedia}
+            onKindChange={(kind) => updateMedia("pose", { kind })}
+            onFileChange={(e) => onFileChange("pose", e)}
+            onURLChange={(value) => onURLChange("pose", value)}
+          />
+        )}
+
+        {mode === "wan2_2_i2v_extend_any_frame" && (
+          <MediaCard
+            title="WAN Start Image"
+            media={wanStartMedia}
+            onKindChange={(kind) => updateMedia("wanStart", { kind })}
+            onFileChange={(e) => onFileChange("wanStart", e)}
+            onURLChange={(value) => onURLChange("wanStart", value)}
+          />
+        )}
+
+        {mode === "wan2_2_i2v_extend_any_frame" && (
+          <MediaCard
+            title="WAN End Image (Optional)"
+            media={wanEndMedia}
+            onKindChange={(kind) => updateMedia("wanEnd", { kind })}
+            onFileChange={(e) => onFileChange("wanEnd", e)}
+            onURLChange={(value) => onURLChange("wanEnd", value)}
+          />
+        )}
       </aside>
 
       <main className="main">
         <section className="card">
-          <h2>Prompt</h2>
-          <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <h2>{mode === "qwen_pose_fusion" ? "Qwen Pose Fusion Prompt" : mode === "wan2_2_i2v_extend_any_frame" ? "Wan Video Prompt" : "Prompt"}</h2>
+          {mode === "qwen_pose_fusion" ? (
+            <textarea rows={4} value={qwenPoseFusionPrompt} onChange={(e) => setQwenPoseFusionPrompt(e.target.value)} />
+          ) : mode === "wan2_2_i2v_extend_any_frame" ? (
+            <div className="stack">
+              <textarea rows={4} value={wanExtendPrompt} onChange={(e) => setWanExtendPrompt(e.target.value)} />
+              <NumberField label="Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
+            </div>
+          ) : (
+            <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          )}
           <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />
           {mode === "qwen_swap_face" && (
             <div className="stack">
@@ -692,172 +823,192 @@ function App() {
         </section>
 
         <section className="grid two">
-          <section className="card">
-            <h2>Model Selection</h2>
-            <label>
-              Checkpoint
-              <select value={ckptName} onChange={(e) => setCkptName(e.target.value)}>
-                {(catalog.checkpoints || []).map((item) => (
-                  <option key={item.path} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="toggle">
-              <input type="checkbox" checked={enableLora} onChange={(e) => setEnableLora(e.target.checked)} />
-              Enable LoRA chain
-            </label>
-            {enableLora && (
-              <div className="stack">
-                {loras.map((row) => (
-                  <div className="subcard" key={row.id}>
-                    <select value={row.name} onChange={(e) => updateLora(row.id, { name: e.target.value })}>
-                      <option value="">Select LoRA</option>
-                      {(catalog.loras || []).map((item) => (
-                        <option key={item.path} value={item.name}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="inline">
-                      <NumberField label="Model" value={row.strength_model} onChange={(v) => updateLora(row.id, { strength_model: v })} min={0} max={2} step={0.05} />
-                      <NumberField label="Clip" value={row.strength_clip} onChange={(v) => updateLora(row.id, { strength_clip: v })} min={0} max={2} step={0.05} />
+          {isWanMode ? (
+            <section className="card">
+              <h2>WAN LoRA Chain</h2>
+              <label className="toggle">
+                <input type="checkbox" checked={enableLora} onChange={(e) => setEnableLora(e.target.checked)} />
+                Enable LoRA chain
+              </label>
+              {enableLora && (
+                <div className="stack">
+                  {loras.map((row) => (
+                    <div className="subcard" key={row.id}>
+                      <select value={row.name} onChange={(e) => updateLora(row.id, { name: e.target.value })}>
+                        <option value="">Select LoRA</option>
+                        {(catalog.loras || []).map((item) => (
+                          <option key={item.path} value={item.name}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="inline">
+                        <NumberField label="Model" value={row.strength_model} onChange={(v) => updateLora(row.id, { strength_model: v })} min={0} max={2} step={0.05} />
+                        <NumberField label="Clip" value={row.strength_clip} onChange={(v) => updateLora(row.id, { strength_clip: v })} min={0} max={2} step={0.05} />
+                      </div>
+                      <button type="button" className="ghost" onClick={() => removeLora(row.id)}>
+                        Remove
+                      </button>
                     </div>
-                    <button type="button" className="ghost" onClick={() => removeLora(row.id)}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button type="button" className="ghost" onClick={addLora}>
-                  Add LoRA
-                </button>
-              </div>
-            )}
-            <label className="toggle">
-              <input type="checkbox" checked={enableUpscale} onChange={(e) => setEnableUpscale(e.target.checked)} />
-              Enable 4x upscale
-            </label>
-            {enableUpscale && (
+                  ))}
+                  <button type="button" className="ghost" onClick={addLora}>
+                    Add LoRA
+                  </button>
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className="card">
+              <h2>Model Selection</h2>
               <label>
-                Upscale Model
-                <select value={upscaleModelName} onChange={(e) => setUpscaleModelName(e.target.value)}>
-                  {(catalog.upscale_models || []).map((item) => (
+                Checkpoint
+                <select value={ckptName} onChange={(e) => setCkptName(e.target.value)}>
+                  {(catalog.checkpoints || []).map((item) => (
                     <option key={item.path} value={item.name}>
                       {item.name}
                     </option>
                   ))}
                 </select>
               </label>
-            )}
-          </section>
+              <label className="toggle">
+                <input type="checkbox" checked={enableLora} onChange={(e) => setEnableLora(e.target.checked)} />
+                Enable LoRA chain
+              </label>
+              {enableLora && (
+                <div className="stack">
+                  {loras.map((row) => (
+                    <div className="subcard" key={row.id}>
+                      <select value={row.name} onChange={(e) => updateLora(row.id, { name: e.target.value })}>
+                        <option value="">Select LoRA</option>
+                        {(catalog.loras || []).map((item) => (
+                          <option key={item.path} value={item.name}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="inline">
+                        <NumberField label="Model" value={row.strength_model} onChange={(v) => updateLora(row.id, { strength_model: v })} min={0} max={2} step={0.05} />
+                        <NumberField label="Clip" value={row.strength_clip} onChange={(v) => updateLora(row.id, { strength_clip: v })} min={0} max={2} step={0.05} />
+                      </div>
+                      <button type="button" className="ghost" onClick={() => removeLora(row.id)}>
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" className="ghost" onClick={addLora}>
+                    Add LoRA
+                  </button>
+                </div>
+              )}
+              <label className="toggle">
+                <input type="checkbox" checked={enableUpscale} onChange={(e) => setEnableUpscale(e.target.checked)} />
+                Enable 4x upscale
+              </label>
+              {enableUpscale && (
+                <label>
+                  Upscale Model
+                  <select value={upscaleModelName} onChange={(e) => setUpscaleModelName(e.target.value)}>
+                    {(catalog.upscale_models || []).map((item) => (
+                      <option key={item.path} value={item.name}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </section>
+          )}
 
-          <section className="card">
-            <h2>Stage Params</h2>
-            <div className="inline">
-              <NumberField label="Width" value={width} onChange={setWidth} min={256} max={2048} step={64} />
-              <NumberField label="Height" value={height} onChange={setHeight} min={256} max={2048} step={64} />
-              <NumberField label="Final Batch" value={batchSize} onChange={setBatchSize} min={1} max={8} step={1} />
-            </div>
-            <div className="inline">
-              <label>
-                Final Sampler
-                <input value={samplerName} onChange={(e) => setSamplerName(e.target.value)} />
-              </label>
-              <label>
-                Final Scheduler
-                <input value={scheduler} onChange={(e) => setScheduler(e.target.value)} />
-              </label>
-            </div>
-            <div className="inline">
-              <NumberField label="Final Seed" value={seed} onChange={setSeed} min={0} max={9999999999999999} step={1} />
-              <NumberField label="Final Denoise" value={denoise} onChange={setDenoise} min={0} max={1} step={0.05} />
-            </div>
-            <div className="inline">
-              <NumberField label="Final Steps" value={steps} onChange={setSteps} min={1} max={120} step={1} />
-              <NumberField label="Final CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
-            </div>
-            {mode === "dual_pass_auto_pose" && (
-              <>
-                <div className="inline">
-                  <NumberField label="Base Seed" value={baseSeed} onChange={setBaseSeed} min={0} max={9999999999999999} step={1} />
-                  <NumberField label="Base Denoise" value={baseDenoise} onChange={setBaseDenoise} min={0} max={1} step={0.05} />
-                </div>
-                <div className="inline">
-                  <NumberField label="Base Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={100} step={1} />
-                  <NumberField label="Base CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
-                </div>
-                <div className="inline">
-                  <label>
-                    Base Sampler
-                    <input value={baseSamplerName} onChange={(e) => setBaseSamplerName(e.target.value)} />
-                  </label>
-                  <label>
-                    Base Scheduler
-                    <input value={baseScheduler} onChange={(e) => setBaseScheduler(e.target.value)} />
-                  </label>
-                </div>
-              </>
-            )}
-          </section>
+          {!isWanMode && (
+            <section className="card">
+              <h2>Stage Params</h2>
+              <div className="inline">
+                <NumberField label="Width" value={width} onChange={setWidth} min={256} max={2048} step={64} />
+                <NumberField label="Height" value={height} onChange={setHeight} min={256} max={2048} step={64} />
+                <NumberField label="Final Batch" value={batchSize} onChange={setBatchSize} min={1} max={8} step={1} />
+              </div>
+              <div className="inline">
+                <label>
+                  Final Sampler
+                  <input value={samplerName} onChange={(e) => setSamplerName(e.target.value)} />
+                </label>
+                <label>
+                  Final Scheduler
+                  <input value={scheduler} onChange={(e) => setScheduler(e.target.value)} />
+                </label>
+              </div>
+              <div className="inline">
+                <NumberField label="Final Seed" value={seed} onChange={setSeed} min={0} max={9999999999999999} step={1} />
+                <NumberField label="Final Denoise" value={denoise} onChange={setDenoise} min={0} max={1} step={0.05} />
+              </div>
+              <div className="inline">
+                <NumberField label="Final Steps" value={steps} onChange={setSteps} min={1} max={120} step={1} />
+                <NumberField label="Final CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
+              </div>
+              {mode === "dual_pass_auto_pose" && (
+                <>
+                  <div className="inline">
+                    <NumberField label="Base Seed" value={baseSeed} onChange={setBaseSeed} min={0} max={9999999999999999} step={1} />
+                    <NumberField label="Base Denoise" value={baseDenoise} onChange={setBaseDenoise} min={0} max={1} step={0.05} />
+                  </div>
+                  <div className="inline">
+                    <NumberField label="Base Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={100} step={1} />
+                    <NumberField label="Base CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
+                  </div>
+                  <div className="inline">
+                    <label>
+                      Base Sampler
+                      <input value={baseSamplerName} onChange={(e) => setBaseSamplerName(e.target.value)} />
+                    </label>
+                    <label>
+                      Base Scheduler
+                      <input value={baseScheduler} onChange={(e) => setBaseScheduler(e.target.value)} />
+                    </label>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
         </section>
 
         <section className="grid two">
-          <section className="card">
-            <h2>Output</h2>
-            <div className="inline">
-              <label>
-                Output Format
-                <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value as "jpg" | "png")}>
-                  <option value="jpg">jpg</option>
-                  <option value="png">png</option>
-                </select>
-              </label>
-              <NumberField label="JPEG Quality" value={jpgQuality} onChange={setJpgQuality} min={1} max={100} step={1} />
-            </div>
-            <label className="toggle">
-              <input type="checkbox" checked={keepIntermediate} onChange={(e) => setKeepIntermediate(e.target.checked)} />
-              Keep intermediate outputs
-            </label>
-          </section>
-
-          <section className="card">
-            <h2>I2V Postprocess</h2>
-            <label className="toggle">
-              <input type="checkbox" checked={enableI2V} onChange={(e) => setEnableI2V(e.target.checked)} />
-              Enable i2v for final outputs
-            </label>
-            <div className="stack">
-              <label>
-                I2V Prompt
-                <textarea rows={4} value={i2vPrompt} onChange={(e) => setI2VPrompt(e.target.value)} />
-              </label>
+          {!isWanMode && (
+            <section className="card">
+              <h2>Output</h2>
               <div className="inline">
                 <label>
-                  I2V Model
-                  <input value={i2vModel} onChange={(e) => setI2VModel(e.target.value)} />
+                  Output Format
+                  <select value={outputFormat} onChange={(e) => setOutputFormat(e.target.value as "jpg" | "png")}>
+                    <option value="jpg">jpg</option>
+                    <option value="png">png</option>
+                  </select>
                 </label>
+                <NumberField label="JPEG Quality" value={jpgQuality} onChange={setJpgQuality} min={1} max={100} step={1} />
+              </div>
+              <label className="toggle">
+                <input type="checkbox" checked={keepIntermediate} onChange={(e) => setKeepIntermediate(e.target.checked)} />
+                Keep intermediate outputs
+              </label>
+            </section>
+          )}
+
+          {isWanMode ? (
+            <section className="card">
+              <h2>WAN Video Options</h2>
+              <div className="inline">
                 <label>
-                  I2V Resolution
+                  WAN Resolution
                   <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
                     <option value="480P">480P</option>
                     <option value="720P">720P</option>
                     <option value="1080P">1080P</option>
                   </select>
                 </label>
+                <label>
+                  WAN Audio URL
+                  <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
+                </label>
               </div>
-              <div className="inline">
-                <NumberField label="I2V Duration" value={i2vDuration} onChange={setI2VDuration} min={2} max={15} step={1} />
-                <NumberField label="I2V Seed" value={i2vSeed} onChange={setI2VSeed} min={0} max={2147483647} step={1} />
-              </div>
-              <label>
-                I2V Negative Prompt
-                <textarea rows={3} value={i2vNegativePrompt} onChange={(e) => setI2VNegativePrompt(e.target.value)} />
-              </label>
-              <label>
-                I2V Audio URL
-                <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
-              </label>
               <div className="inline">
                 <label className="toggle">
                   <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
@@ -868,48 +1019,104 @@ function App() {
                   Watermark
                 </label>
               </div>
-            </div>
-          </section>
-
-          <section className="card">
-            <h2>PuLID</h2>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={enablePulid}
-                onChange={(e) => setEnablePulid(e.target.checked)}
-                disabled={mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face" || mode === "qwen_edit_face"}
-              />
-              Enable PuLID
-            </label>
-            <label>
-              Method
-              <input value={pulidMethod} onChange={(e) => setPulidMethod(e.target.value)} />
-            </label>
-            <div className="inline">
-              <NumberField label="Weight" value={pulidWeight} onChange={setPulidWeight} min={0} max={2} step={0.05} />
-              <NumberField label="Start" value={pulidStartAt} onChange={setPulidStartAt} min={0} max={1} step={0.05} />
-              <NumberField label="End" value={pulidEndAt} onChange={setPulidEndAt} min={0} max={1} step={0.05} />
-            </div>
-          </section>
-
-          {mode !== "text_only" && mode !== "qwen_swap_face" && mode !== "qwen_edit_face" && (
+            </section>
+          ) : (
             <section className="card">
-              <h2>ControlNet</h2>
-              <div className="inline">
-                <NumberField label="Depth Strength" value={cnDepthStrength} onChange={setCnDepthStrength} min={0} max={2} step={0.05} />
-                <NumberField label="Pose Strength" value={cnPoseStrength} onChange={setCnPoseStrength} min={0} max={2} step={0.05} />
-              </div>
-              <div className="inline">
-                <NumberField label="Depth Start" value={cnDepthStartPercent} onChange={setCnDepthStartPercent} min={0} max={1} step={0.05} />
-                <NumberField label="Depth End" value={cnDepthEndPercent} onChange={setCnDepthEndPercent} min={0} max={1} step={0.05} />
-              </div>
-              <div className="inline">
-                <NumberField label="Pose Start" value={cnPoseStartPercent} onChange={setCnPoseStartPercent} min={0} max={1} step={0.05} />
-                <NumberField label="Pose End" value={cnPoseEndPercent} onChange={setCnPoseEndPercent} min={0} max={1} step={0.05} />
+              <h2>I2V Postprocess</h2>
+              <label className="toggle">
+                <input type="checkbox" checked={enableI2V} onChange={(e) => setEnableI2V(e.target.checked)} />
+                Enable i2v for final outputs
+              </label>
+              <div className="stack">
+                <label>
+                  I2V Prompt
+                  <textarea rows={4} value={i2vPrompt} onChange={(e) => setI2VPrompt(e.target.value)} />
+                </label>
+                <div className="inline">
+                  <label>
+                    I2V Model
+                    <input value={i2vModel} onChange={(e) => setI2VModel(e.target.value)} />
+                  </label>
+                  <label>
+                    I2V Resolution
+                    <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
+                      <option value="480P">480P</option>
+                      <option value="720P">720P</option>
+                      <option value="1080P">1080P</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="inline">
+                  <NumberField label="I2V Duration" value={i2vDuration} onChange={setI2VDuration} min={2} max={15} step={1} />
+                  <NumberField label="I2V Seed" value={i2vSeed} onChange={setI2VSeed} min={0} max={2147483647} step={1} />
+                </div>
+                <label>
+                  I2V Negative Prompt
+                  <textarea rows={3} value={i2vNegativePrompt} onChange={(e) => setI2VNegativePrompt(e.target.value)} />
+                </label>
+                <label>
+                  I2V Audio URL
+                  <input placeholder="https://..." value={i2vAudioURL} onChange={(e) => setI2VAudioURL(e.target.value)} />
+                </label>
+                <div className="inline">
+                  <label className="toggle">
+                    <input type="checkbox" checked={i2vPromptExtend} onChange={(e) => setI2VPromptExtend(e.target.checked)} />
+                    Prompt extend
+                  </label>
+                  <label className="toggle">
+                    <input type="checkbox" checked={i2vWatermark} onChange={(e) => setI2VWatermark(e.target.checked)} />
+                    Watermark
+                  </label>
+                </div>
               </div>
             </section>
           )}
+
+          {!isWanMode && (
+            <section className="card">
+              <h2>PuLID</h2>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={enablePulid}
+                  onChange={(e) => setEnablePulid(e.target.checked)}
+                  disabled={mode === "pose_only" || mode === "text_only" || mode === "qwen_swap_face" || mode === "qwen_pose_fusion" || mode === "qwen_edit_face"}
+                />
+                Enable PuLID
+              </label>
+              <label>
+                Method
+                <input value={pulidMethod} onChange={(e) => setPulidMethod(e.target.value)} />
+              </label>
+              <div className="inline">
+                <NumberField label="Weight" value={pulidWeight} onChange={setPulidWeight} min={0} max={2} step={0.05} />
+                <NumberField label="Start" value={pulidStartAt} onChange={setPulidStartAt} min={0} max={1} step={0.05} />
+                <NumberField label="End" value={pulidEndAt} onChange={setPulidEndAt} min={0} max={1} step={0.05} />
+              </div>
+            </section>
+          )}
+
+          {!isWanMode &&
+            mode !== "text_only" &&
+            mode !== "qwen_swap_face" &&
+            mode !== "qwen_pose_fusion" &&
+            mode !== "qwen_edit_face" && (
+              <section className="card">
+                <h2>ControlNet</h2>
+                <div className="inline">
+                  <NumberField label="Depth Strength" value={cnDepthStrength} onChange={setCnDepthStrength} min={0} max={2} step={0.05} />
+                  <NumberField label="Pose Strength" value={cnPoseStrength} onChange={setCnPoseStrength} min={0} max={2} step={0.05} />
+                </div>
+                <div className="inline">
+                  <NumberField label="Depth Start" value={cnDepthStartPercent} onChange={setCnDepthStartPercent} min={0} max={1} step={0.05} />
+                  <NumberField label="Depth End" value={cnDepthEndPercent} onChange={setCnDepthEndPercent} min={0} max={1} step={0.05} />
+                </div>
+                <div className="inline">
+                  <NumberField label="Pose Start" value={cnPoseStartPercent} onChange={setCnPoseStartPercent} min={0} max={1} step={0.05} />
+                  <NumberField label="Pose End" value={cnPoseEndPercent} onChange={setCnPoseEndPercent} min={0} max={1} step={0.05} />
+                </div>
+              </section>
+            )}
         </section>
 
         <section className="card">
@@ -1025,6 +1232,10 @@ function ResultGallery({ result }: { result: GenerateResult }) {
     extractSingleStringArray(result, ["final_video_url"]) ??
     extractSingleStringArray(result, ["meta", "output", "final_video_url"]) ??
     [];
+  const segmentVideoURLs =
+    extractStringArray(result, ["segment_video_urls"]) ??
+    extractStringArray(result, ["meta", "output", "segment_video_urls"]) ??
+    [];
   const intermediates =
     extractStringArray(result, ["intermediate_urls"]) ??
     extractStringArray(result, ["meta", "output", "intermediate_urls"]) ??
@@ -1042,6 +1253,19 @@ function ResultGallery({ result }: { result: GenerateResult }) {
           </div>
           <a href={url} target="_blank" rel="noreferrer">
             <img src={url} alt={`final result ${idx + 1}`} />
+          </a>
+        </div>
+      ))}
+      {segmentVideoURLs.map((url, idx) => (
+        <div key={url} className="imageCard">
+          <div className="imageCardHeader">
+            <span>{`Segment Video ${idx + 1}`}</span>
+            <button type="button" className="ghost small" onClick={() => void copyText(url)}>
+              Copy URL
+            </button>
+          </div>
+          <a href={url} target="_blank" rel="noreferrer">
+            <video className="mediaPreview" src={url} controls playsInline />
           </a>
         </div>
       ))}
@@ -1121,6 +1345,14 @@ async function resolveMedia(media: MediaState): Promise<string> {
   return btoa(binary);
 }
 
+async function resolveOptionalMedia(media: MediaState): Promise<string | undefined> {
+  const value = media.kind === "url" ? media.url.trim() : media.file ? media.preview.trim() : "";
+  if (!value) {
+    return undefined;
+  }
+  return resolveMedia(media);
+}
+
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
 }
@@ -1157,7 +1389,9 @@ function asMode(value: unknown): Mode | undefined {
     value === "pose_only" ||
     value === "text_only" ||
     value === "qwen_swap_face" ||
-    value === "qwen_edit_face"
+    value === "qwen_pose_fusion" ||
+    value === "qwen_edit_face" ||
+    value === "wan2_2_i2v_extend_any_frame"
   ) {
     return value;
   }

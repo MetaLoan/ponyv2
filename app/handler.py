@@ -4,6 +4,7 @@ import json
 import fcntl
 import mimetypes
 import os
+import subprocess
 import tempfile
 import time
 import uuid
@@ -44,12 +45,12 @@ QWEN_API_URL = os.getenv(
         "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
     ),
 )
-QWEN_MODEL = os.getenv("DASHSCOPE_MODEL", "qwen-image-edit-max")
+QWEN_MODEL = os.getenv("DASHSCOPE_MODEL", "qwen-image-2.0-pro")
 QWEN_DATA_INSPECTION = os.getenv(
     "DASHSCOPE_DATA_INSPECTION_HEADER",
     '{"input":"disable", "output": "disable"}',
 )
-QWEN_DEFAULT_SWAP_PROMPT = "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。"
+QWEN_DEFAULT_SWAP_PROMPT = "以图1为最终画面底图，严格保留图1的人物姿势、构图、服装、光照、背景和沙滩环境；仅将图2中的面部特征自然融合到图1人物脸上，保持真实自然、五官清晰、肤质统一；图3如存在，仅作为辅助参考，不要改变其他区域。"
 QWEN_DEFAULT_EDIT_PROMPT = "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}"
 I2V_API_URL = os.getenv(
     "DASHSCOPE_I2V_API_URL",
@@ -61,6 +62,20 @@ I2V_API_URL = os.getenv(
 I2V_MODEL = os.getenv("DASHSCOPE_I2V_MODEL", "wan2.7-i2v")
 I2V_DATA_INSPECTION = os.getenv("DASHSCOPE_DATA_INSPECTION_HEADER", QWEN_DATA_INSPECTION)
 I2V_DEFAULT_PROMPT = "保持主体一致，生成自然流畅、画面连贯的动态视频，镜头稳定，动作真实，细节清晰。"
+WAN_EXTEND_ANY_FRAME_MODE = "wan2_2_i2v_extend_any_frame"
+WAN_EXTEND_ANY_FRAME_MODEL = os.getenv("WAN_EXTEND_ANY_FRAME_MODEL", "wan2.2-kf2v-flash")
+WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT = 81
+WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT = "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，动作自然连贯，镜头稳定，细节清晰，电影感成片"
+WAN_WORKFLOW_API_PATH = Path(os.getenv("WAN_WORKFLOW_API_PATH", "/workspace/runpod-slim/ComfyUI/wan2_2_i2v_extend_any_frame_api.json"))
+WAN_EXECUTION_BACKEND = os.getenv("WAN_EXECUTION_BACKEND", "auto").strip().lower()
+WAN_DEFAULT_WIDTH = int(os.getenv("WAN_DEFAULT_WIDTH", "480"))
+WAN_DEFAULT_HEIGHT = int(os.getenv("WAN_DEFAULT_HEIGHT", "832"))
+WAN_VIDEO_FPS = int(os.getenv("WAN_VIDEO_FPS", "8"))
+WAN_VAE_NAME = os.getenv("WAN_VAE_NAME", "wan_2.1_vae.safetensors")
+WAN_CLIP_VISION_NAME = os.getenv("WAN_CLIP_VISION_NAME", "clip_vision_h.safetensors")
+WAN_CLIP_NAME = os.getenv("WAN_CLIP_NAME", "umt5_xxl_fp8_e4m3fn_scaled.safetensors")
+WAN_UNET_HIGH_NAME = os.getenv("WAN_UNET_HIGH_NAME", "WAN2.2-NSFW-FastMove-V2-H.safetensors")
+WAN_UNET_LOW_NAME = os.getenv("WAN_UNET_LOW_NAME", "WAN2.2-NSFW-FastMove-V2-L.safetensors")
 
 
 def _first_env(*names: str, default: str = "") -> str:
@@ -435,6 +450,8 @@ def infer_mode(input_data: Dict) -> str:
     mode = str(input_data.get("mode", "")).strip()
     if mode:
         return mode
+    if str(input_data.get("startimg", "")).strip():
+        return WAN_EXTEND_ANY_FRAME_MODE
     if not input_data.get("reference_image") and not input_data.get("pose_image"):
         return "text_only"
     return "pose_then_face_swap" if input_data.get("pose_image") else "dual_pass_auto_pose"
@@ -465,6 +482,9 @@ def normalize_input(input_data: Dict) -> Dict:
     data.setdefault("qwen_model", QWEN_MODEL)
     data.setdefault("qwen_size", "")
     data.setdefault("qwen_extra_image", "")
+    data.setdefault("startimg", "")
+    data.setdefault("endimg", "")
+    data.setdefault("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
     data.setdefault("enable_i2v", False)
     data.setdefault("i2v_prompt", data.get("prompt", I2V_DEFAULT_PROMPT))
     data.setdefault("i2v_model", I2V_MODEL)
@@ -485,12 +505,22 @@ def normalize_input(input_data: Dict) -> Dict:
     if "enable_upscale" not in data and "use_upscale" in data:
         data["enable_upscale"] = bool(data.get("use_upscale"))
     data.setdefault("enable_upscale", False)
+    if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
+        data["enable_upscale"] = False
     if "enable_pulid" not in data:
         data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only", "qwen_swap_face", "qwen_edit_face"}
     if data["mode"] in {"qwen_swap_face", "qwen_edit_face"}:
         data["enable_pulid"] = False
+    if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
+        data["enable_pulid"] = False
+        data["enable_i2v"] = False
     if "enable_lora" not in data:
         data["enable_lora"] = bool(data.get("loras"))
+    if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
+        data["prompt"] = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
+        data["frames"] = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+        data.setdefault("width", WAN_DEFAULT_WIDTH)
+        data.setdefault("height", WAN_DEFAULT_HEIGHT)
     return data
 
 
@@ -512,6 +542,11 @@ def validate_input(input_data: Dict) -> None:
     elif mode == "qwen_swap_face":
         if "reference_image" not in input_data:
             raise RuntimeError("reference_image is required for qwen_swap_face")
+    elif mode == WAN_EXTEND_ANY_FRAME_MODE:
+        if not str(input_data.get("startimg", "")).strip():
+            raise RuntimeError("startimg is required for wan2_2_i2v_extend_any_frame")
+        if int(input_data.get("frames", 0) or 0) <= 0:
+            raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
         pass
     else:
@@ -964,6 +999,371 @@ def _call_dashscope_i2v(
     raise RuntimeError("DashScope i2v failed without a specific error")
 
 
+def _call_dashscope_i2v_extend_any_frame(
+    first_media: str,
+    prompt: str,
+    negative_prompt: str,
+    model: str,
+    resolution: str,
+    prompt_extend: bool,
+    watermark: bool,
+    audio_url: str,
+    last_media: str = "",
+) -> Tuple[bytes, str]:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("DASHSCOPE_API_KEY is required for wan2.2 i2v extend mode")
+
+    model_name = (model or WAN_EXTEND_ANY_FRAME_MODEL).strip() or WAN_EXTEND_ANY_FRAME_MODEL
+    prompt_text = (prompt or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
+    resolution_text = (resolution or "720P").strip() or "720P"
+    first_input, _ = _media_to_qwen_data_url(first_media)
+    last_input = ""
+    if last_media.strip():
+        last_input, _ = _media_to_qwen_data_url(last_media)
+
+    api_url = I2V_API_URL.rstrip("/")
+    if not api_url.endswith("/video-synthesis"):
+        api_url = api_url + "/services/aigc/video-generation/video-synthesis"
+    payload = {
+        "model": model_name,
+        "input": {
+            "prompt": prompt_text,
+            "first_frame_url": first_input,
+        },
+        "parameters": {
+            "resolution": resolution_text,
+            "prompt_extend": bool(prompt_extend),
+            "watermark": bool(watermark),
+        },
+    }
+    if last_input:
+        payload["input"]["last_frame_url"] = last_input
+    if negative_prompt.strip():
+        payload["input"]["negative_prompt"] = negative_prompt.strip()
+    if audio_url.strip():
+        payload["input"]["audio_url"] = audio_url.strip()
+
+    return _submit_and_wait_dashscope_i2v(payload, api_key, api_url)
+
+
+def _extract_video_last_frame_bytes(video_path: Path) -> bytes:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+        frame_path = Path(tmp.name)
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-sseof",
+            "-0.1",
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            str(frame_path),
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if proc.returncode != 0 or not frame_path.exists():
+            raise RuntimeError(
+                f"ffmpeg failed to extract last frame: {proc.stderr.decode('utf-8', errors='ignore')[:4000]}"
+            )
+        return frame_path.read_bytes()
+    finally:
+        try:
+            frame_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _concat_video_segments(segment_paths: List[Path], output_path: Path) -> None:
+    if not segment_paths:
+        raise RuntimeError("No segment videos available to merge")
+    if len(segment_paths) == 1:
+        output_path.write_bytes(segment_paths[0].read_bytes())
+        return
+
+    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt", encoding="utf-8") as tmp:
+        list_path = Path(tmp.name)
+        for segment in segment_paths:
+            safe = str(segment).replace("'", "'\\''")
+            tmp.write(f"file '{safe}'\n")
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_path),
+            "-c",
+            "copy",
+            str(output_path),
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if proc.returncode == 0 and output_path.exists():
+            return
+
+        fallback_cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_path),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+            str(output_path),
+        ]
+        proc = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if proc.returncode != 0 or not output_path.exists():
+            raise RuntimeError(
+                f"ffmpeg failed to merge segment videos: {proc.stderr.decode('utf-8', errors='ignore')[:4000]}"
+            )
+    finally:
+        try:
+            list_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _make_video_from_frames(frame_paths: List[Path], output_path: Path, fps: int = WAN_VIDEO_FPS) -> None:
+    if not frame_paths:
+        raise RuntimeError("No frames available to encode video")
+
+    with tempfile.TemporaryDirectory(prefix="wan_frames_") as tmpdir:
+        tmp_dir = Path(tmpdir)
+        for idx, frame_path in enumerate(frame_paths, start=1):
+            target = tmp_dir / f"{idx:06d}.png"
+            target.write_bytes(frame_path.read_bytes())
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(max(1, int(fps or WAN_VIDEO_FPS))),
+            "-i",
+            str(tmp_dir / "%06d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(output_path),
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if proc.returncode != 0 or not output_path.exists():
+            raise RuntimeError(
+                f"ffmpeg failed to encode video from frames: {proc.stderr.decode('utf-8', errors='ignore')[:4000]}"
+            )
+
+
+def _collect_node_images(history_obj: Dict, node_id: str) -> List[Dict]:
+    outputs = history_obj.get("outputs", {}) if isinstance(history_obj, dict) else {}
+    node_output = outputs.get(node_id, {}) if isinstance(outputs, dict) else {}
+    images = node_output.get("images", []) if isinstance(node_output, dict) else []
+    return [img for img in images if isinstance(img, dict)]
+
+
+def _wan_backend_requested() -> str:
+    backend = WAN_EXECUTION_BACKEND
+    if backend in {"comfy", "dashscope", "auto"}:
+        return backend
+    return "auto"
+
+
+def _wan_use_comfy_backend(data: Dict) -> bool:
+    backend = _wan_backend_requested()
+    if backend == "dashscope":
+        return False
+    if not WAN_WORKFLOW_API_PATH.exists():
+        return False
+    if backend == "comfy":
+        return True
+    if str(data.get("endimg", "")).strip():
+        return False
+    return True
+
+
+def _apply_wan_lora_chain(prompt: Dict, loras: List[Dict]) -> List:
+    model_source = ["37", 0]
+    if not loras:
+        return model_source
+
+    max_id = _max_node_id(prompt)
+    for idx, lora in enumerate(loras):
+        node_id = str(max_id + idx + 1)
+        prompt[node_id] = {
+            "inputs": {
+                "lora_name": lora["name"],
+                "strength_model": float(lora.get("strength_model", lora.get("strength", 1.0) or 1.0)),
+                "model": model_source,
+            },
+            "class_type": "LoraLoaderModelOnly",
+            "_meta": {"title": f"WAN LoRA {idx + 1}"},
+        }
+        model_source = [node_id, 0]
+    return model_source
+
+
+def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: str, segment_length: int, segment_idx: int) -> None:
+    if "39" in prompt:
+        prompt["39"]["inputs"]["vae_name"] = WAN_VAE_NAME
+    if "49" in prompt:
+        prompt["49"]["inputs"]["clip_name"] = WAN_CLIP_VISION_NAME
+    if "38" in prompt:
+        prompt["38"]["inputs"]["clip_name"] = WAN_CLIP_NAME
+    if "37" in prompt:
+        prompt["37"]["inputs"]["unet_name"] = str(data.get("wan_unet_high_name", WAN_UNET_HIGH_NAME)).strip() or WAN_UNET_HIGH_NAME
+    if "100" in prompt:
+        prompt["100"]["inputs"]["unet_name"] = str(data.get("wan_unet_low_name", WAN_UNET_LOW_NAME)).strip() or WAN_UNET_LOW_NAME
+    if "52" in prompt:
+        prompt["52"]["inputs"]["image"] = current_start_image
+    if "6" in prompt:
+        prompt["6"]["inputs"]["text"] = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
+    if "7" in prompt:
+        prompt["7"]["inputs"]["text"] = str(data.get("negative_prompt", "")).strip()
+    if "50" in prompt:
+        prompt["50"]["inputs"]["width"] = int(data.get("width", WAN_DEFAULT_WIDTH) or WAN_DEFAULT_WIDTH)
+        prompt["50"]["inputs"]["height"] = int(data.get("height", WAN_DEFAULT_HEIGHT) or WAN_DEFAULT_HEIGHT)
+        prompt["50"]["inputs"]["length"] = int(segment_length)
+        prompt["50"]["inputs"]["batch_size"] = 1
+    if "102" in prompt:
+        prompt["102"]["inputs"]["noise_seed"] = int(data.get("seed", 0) or 0)
+    if "103" in prompt:
+        prompt["103"]["inputs"]["noise_seed"] = int(data.get("seed", 0) or 0)
+    if "47" in prompt:
+        prompt["47"]["inputs"]["filename_prefix"] = f"wan_{data.get('request_id', 'wan')}_{segment_idx:02d}"
+
+
+def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str) -> Dict:
+    if not WAN_WORKFLOW_API_PATH.exists():
+        raise RuntimeError(f"WAN workflow template not found: {WAN_WORKFLOW_API_PATH}")
+    if str(data.get("endimg", "")).strip():
+        raise RuntimeError("WAN Comfy workflow does not yet support endimg; use the DashScope backend for endimg jobs")
+
+    frames = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    segment_count = max(1, (frames + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1) // WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
+    negative_prompt = str(data.get("negative_prompt", "")).strip()
+    loras = [x for x in (data.get("loras") or []) if isinstance(x, dict) and str(x.get("name", "")).strip()]
+
+    segment_paths: List[Path] = []
+    segment_records: List[Dict] = []
+    current_start = str(data.get("startimg", "")).strip()
+
+    for idx in range(segment_count):
+        segment_length = min(WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT, frames - idx * WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+        prompt = load_json(WAN_WORKFLOW_API_PATH)
+        start_image_filename = resolve_media_to_comfy_filename(current_start, f"wan_start_{request_id}_{idx + 1:02d}")
+        if loras:
+            model_source = _apply_wan_lora_chain(prompt, loras)
+            if "54" in prompt:
+                prompt["54"]["inputs"]["model"] = model_source
+            if "101" in prompt:
+                prompt["101"]["inputs"]["model"] = model_source
+        else:
+            if "54" in prompt:
+                prompt["54"]["inputs"]["model"] = ["37", 0]
+            if "101" in prompt:
+                prompt["101"]["inputs"]["model"] = ["37", 0]
+        if "150" in prompt:
+            prompt.pop("150", None)
+        if "151" in prompt:
+            prompt.pop("151", None)
+        _apply_wan_workflow_defaults(prompt, data, start_image_filename, segment_length, idx + 1)
+        if "6" in prompt:
+            prompt["6"]["inputs"]["text"] = prompt_text
+        if "7" in prompt:
+            prompt["7"]["inputs"]["text"] = negative_prompt
+
+        validate_required_node_types(prompt)
+        prompt_id = queue_prompt(prompt)
+        history_obj = wait_history(prompt_id)
+        frame_images = _collect_node_images(history_obj, "47")
+        if not frame_images:
+            raise RuntimeError(f"No frames produced for WAN segment {idx + 1}")
+
+        frame_paths: List[Path] = []
+        for frame_idx, img_desc in enumerate(frame_images, start=1):
+            raw = _read_output_image(img_desc)
+            frame_path = _write_output_bytes(f"wan_{request_id}_{idx + 1:02d}_{frame_idx:03d}.png", raw)
+            frame_paths.append(frame_path)
+
+        segment_path = COMFY_OUTPUT_DIR / f"wan_{request_id}_{idx + 1:02d}.mp4"
+        _make_video_from_frames(frame_paths, segment_path, fps=WAN_VIDEO_FPS)
+        segment_paths.append(segment_path)
+        segment_records.append(
+            {
+                "filename": segment_path.name,
+                "subfolder": "",
+                "type": "output",
+                "content_type": "video/mp4",
+            }
+        )
+
+        last_frame_bytes = _read_output_image(frame_images[-1])
+        current_start, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
+
+    merged_filename = f"wan_{request_id}_merged.mp4"
+    merged_path = COMFY_OUTPUT_DIR / merged_filename
+    _concat_video_segments(segment_paths, merged_path)
+
+    s3, s3_cfg = get_r2_client_and_config()
+    if not s3:
+        return {
+            "ok": True,
+            "mode": WAN_EXTEND_ANY_FRAME_MODE,
+            "request_id": request_id,
+            "segment_count": segment_count,
+            "warning": "R2 env vars missing; returning local filenames only",
+            "final_video_local_file": merged_filename,
+            "final_video_local_files": [merged_filename],
+            "segment_video_local_files": [x["filename"] for x in segment_records],
+        }
+
+    segment_urls: List[str] = []
+    for idx, segment_desc in enumerate(segment_records, start=1):
+        raw = _read_output_image(segment_desc)
+        key = f"{s3_cfg['prefix']}/{request_id}/segments/{idx:02d}_{segment_desc['filename']}"
+        segment_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, raw, "video/mp4"))
+
+    merged_raw = merged_path.read_bytes()
+    merged_url = _upload_bytes_to_r2(
+        s3,
+        s3_cfg,
+        f"{s3_cfg['prefix']}/{request_id}/final_video_01.mp4",
+        merged_raw,
+        "video/mp4",
+    )
+
+    return {
+        "ok": True,
+        "mode": WAN_EXTEND_ANY_FRAME_MODE,
+        "request_id": request_id,
+        "segment_count": segment_count,
+        "final_video_url": merged_url,
+        "final_video_urls": [merged_url],
+        "segment_video_urls": segment_urls,
+        "meta": {
+            "mode": WAN_EXTEND_ANY_FRAME_MODE,
+            "frames": frames,
+            "segment_count": segment_count,
+            "segment_limit": WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT,
+            "startimg": True,
+            "endimg": False,
+            "prompt": prompt_text,
+            "model": WAN_UNET_HIGH_NAME,
+            "backend": "comfy",
+            "workflow": str(WAN_WORKFLOW_API_PATH),
+        },
+    }
+
+
 def get_r2_client_and_config():
     access_key = os.getenv("R2_ACCESS_KEY", "")
     secret_key = os.getenv("R2_SECRET_KEY", "")
@@ -1006,6 +1406,105 @@ def collect_output_images(history_obj: Dict) -> Tuple[List[Dict], List[Dict]]:
     return final_images, intermediate
 
 
+def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
+    start_media = str(data.get("startimg", "")).strip()
+    if not start_media:
+        raise RuntimeError("startimg is required for wan2_2_i2v_extend_any_frame")
+    end_media = str(data.get("endimg", "")).strip()
+    prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
+    negative_prompt = str(data.get("negative_prompt", "")).strip()
+    resolution = str(data.get("i2v_resolution", "720P")).strip() or "720P"
+    prompt_extend = bool(data.get("i2v_prompt_extend", True))
+    watermark = bool(data.get("i2v_watermark", False))
+    audio_url = str(data.get("i2v_audio_url", "")).strip()
+    frames = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    segment_count = max(1, (frames + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1) // WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+
+    segment_paths: List[Path] = []
+    segment_records: List[Dict] = []
+    current_start = start_media
+
+    for index in range(segment_count):
+        current_end = end_media if index == segment_count - 1 and end_media else ""
+        video_raw, video_content_type = _call_dashscope_i2v_extend_any_frame(
+            current_start,
+            prompt_text,
+            negative_prompt,
+            WAN_EXTEND_ANY_FRAME_MODEL,
+            resolution,
+            prompt_extend,
+            watermark,
+            audio_url,
+            current_end,
+        )
+        segment_filename = f"wan_extend_{request_id}_{index + 1:02d}.mp4"
+        segment_path = _write_output_bytes(segment_filename, video_raw)
+        segment_paths.append(segment_path)
+        segment_records.append(
+            {
+                "filename": segment_filename,
+                "subfolder": "",
+                "type": "output",
+                "content_type": video_content_type or "video/mp4",
+            }
+        )
+        last_frame_bytes = _extract_video_last_frame_bytes(segment_path)
+        current_start, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
+
+    merged_filename = f"wan_extend_{request_id}_merged.mp4"
+    merged_path = COMFY_OUTPUT_DIR / merged_filename
+    merged_path.parent.mkdir(parents=True, exist_ok=True)
+    _concat_video_segments(segment_paths, merged_path)
+
+    s3, s3_cfg = get_r2_client_and_config()
+    if not s3:
+        return {
+            "ok": True,
+            "mode": WAN_EXTEND_ANY_FRAME_MODE,
+            "request_id": request_id,
+            "segment_count": segment_count,
+            "warning": "R2 env vars missing; returning local filenames only",
+            "final_video_local_file": merged_filename,
+            "final_video_local_files": [merged_filename],
+            "segment_video_local_files": [x["filename"] for x in segment_records],
+        }
+
+    segment_urls: List[str] = []
+    for idx, segment_desc in enumerate(segment_records, start=1):
+        raw = _read_output_image(segment_desc)
+        key = f"{s3_cfg['prefix']}/{request_id}/segments/{idx:02d}_{segment_desc['filename']}"
+        segment_urls.append(_upload_bytes_to_r2(s3, s3_cfg, key, raw, "video/mp4"))
+
+    merged_raw = merged_path.read_bytes()
+    merged_url = _upload_bytes_to_r2(
+        s3,
+        s3_cfg,
+        f"{s3_cfg['prefix']}/{request_id}/final_video_01.mp4",
+        merged_raw,
+        "video/mp4",
+    )
+
+    return {
+        "ok": True,
+        "mode": WAN_EXTEND_ANY_FRAME_MODE,
+        "request_id": request_id,
+        "segment_count": segment_count,
+        "final_video_url": merged_url,
+        "final_video_urls": [merged_url],
+        "segment_video_urls": segment_urls,
+        "meta": {
+            "mode": WAN_EXTEND_ANY_FRAME_MODE,
+            "frames": frames,
+            "segment_count": segment_count,
+            "segment_limit": WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT,
+            "startimg": True,
+            "endimg": bool(end_media),
+            "prompt": prompt_text,
+            "model": WAN_EXTEND_ANY_FRAME_MODEL,
+        },
+    }
+
+
 def _summarize_history(history_obj: Dict) -> Dict:
     outputs = history_obj.get("outputs", {}) if isinstance(history_obj, dict) else {}
     output_nodes = sorted(outputs.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))
@@ -1037,7 +1536,18 @@ def handler(event: Dict) -> Dict:
     _load_key_env_file()
     data = normalize_input(event.get("input", {}) if isinstance(event, dict) else {})
     request_id = data.get("request_id") or uuid.uuid4().hex
+    data["request_id"] = request_id
     validate_input(data)
+
+    if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
+        if _wan_use_comfy_backend(data):
+            try:
+                return _generate_wan_extend_any_frame_comfy(data, request_id)
+            except Exception as exc:
+                if _wan_backend_requested() == "comfy":
+                    raise
+                print(f"[WARN] WAN comfy backend failed, falling back to DashScope: {exc}")
+        return _generate_wan_extend_any_frame(data, request_id)
 
     prompt = load_json(WORKFLOW_API_PATH)
     v3 = load_json(WORKFLOW_V3_PATH)

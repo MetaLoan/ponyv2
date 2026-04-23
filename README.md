@@ -111,7 +111,7 @@ Optional overrides:
 
 Default behavior:
 - API endpoint defaults to the Singapore DashScope image-edit endpoint
-- Model defaults to `qwen-image-edit-max`
+- Model defaults to `qwen-image-2.0-pro`
 - Data inspection header defaults to `{"input":"disable", "output":"disable"}`
 - The worker sends the base-generated image as image 1, the user reference face as image 2, and an optional third image as image 3
 
@@ -136,6 +136,34 @@ Default behavior:
 - Data inspection header defaults to `{"input":"disable","output":"disable"}`
 - If `enable_i2v` is turned on, the worker sends each final image as the first frame of a separate video task
 - This is the same key used by `qwen_swap_face`; the worker also falls back to `QWEN_API_KEY` if you prefer that naming
+- The RunPod image also pre-installs WAN-oriented ComfyUI custom nodes so a real WAN workflow can be wired in later without rebuilding the base image
+- The WAN Comfy workflow template is copied into `/workspace/runpod-slim/ComfyUI/wan2_2_i2v_extend_any_frame_api.json`
+
+## WAN extend-any-frame mode
+
+`mode=wan2_2_i2v_extend_any_frame` uses the same DashScope video infrastructure but orchestrates it as a segmented video workflow.
+When the WAN Comfy workflow template is present, the worker can auto-switch to the local ComfyUI WAN path for the same mode. Set `WAN_EXECUTION_BACKEND=comfy` to force that path, or leave it at `auto` to fall back to DashScope when the template or model is not ready.
+
+Input contract:
+
+- `startimg` is required
+- `endimg` is optional and only applies to the final segment
+- `prompt` is the video prompt
+- `frames` controls total length and is split into 81-frame segments
+- `loras` still supports chained LoRA loading
+- WAN mode hides the SDXL-only checkpoint / PuLID / ControlNet / upscale controls and replaces them with WAN video options
+
+Behavior:
+
+- The worker generates one video segment per 81-frame block
+- Each next segment starts from the previous segment's last frame
+- The worker merges all generated segments into a final long video
+- The response returns both `segment_video_urls` and `final_video_url`
+
+Recommended defaults:
+
+- `frames=81` for a single segment
+- `prompt` should include the scene environment, such as beach or street, because the prompt is the main video description
 
 Notes:
 - The YAML file is JSON-compatible YAML so the installer can parse it with Python stdlib only.
@@ -214,6 +242,7 @@ This repo now includes a Fly-specific deployment for the React + Go tester:
 - `Dockerfile.fly`
 - `fly.toml`
 - `DEPLOY_FLY.md`
+- `FRONTEND_WORKFLOW_MODES.md` 说明前端测试页里每种工作模式怎么用，适合快速查看
 
 Build:
 

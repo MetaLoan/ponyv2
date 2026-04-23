@@ -49,7 +49,12 @@ This file is now split into:
 
 - `comfyui_controlnet_aux` - `main` - `95a13e2`
 - `PuLID_ComfyUI` - `main` - `93e0c4c`
+- `ComfyUI-VideoHelperSuite` - `main`
 - `ComfyUI-KJNodes` - `master` - `d2ea1a7`
+- `ComfyUI-Frame-Interpolation` - `main`
+- `ComfyUI-Easy-Use` - `main`
+- `cg-use-everywhere` - `main`
+- `rgthree-comfy` - `main`
 - `ComfyUI-Manager` - `master` - `863ffdc`
 - `ComfyUI-RunpodDirect` - `master` - `e81cf6b`
 - `Civicomfy` - `master` - `f8b82b3`

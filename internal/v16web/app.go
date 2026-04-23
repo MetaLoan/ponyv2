@@ -11,8 +11,12 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -37,31 +41,35 @@ type App struct {
 }
 
 type Config struct {
-	Addr             string
-	RepoRoot         string
-	FrontendDist     string
-	WorkflowTemplate string
-	KeyEnvFile       string
-	S3CredsFile      string
-	ComfyAPIURL      string
-	RunPodAPIKey     string
-	RunPodEndpointID string
-	S3Endpoint       string
-	S3Region         string
-	S3Bucket         string
-	S3AccessKey      string
-	S3SecretKey      string
-	S3RootPrefix     string
-	S3CatalogPython  string
-	S3CatalogScript  string
+	Addr                string
+	RepoRoot            string
+	FrontendDist        string
+	WorkflowTemplate    string
+	WanWorkflowTemplate string
+	KeyEnvFile          string
+	S3CredsFile         string
+	ComfyAPIURL         string
+	RunPodAPIKey        string
+	RunPodEndpointID    string
+	S3Endpoint          string
+	S3Region            string
+	S3Bucket            string
+	S3AccessKey         string
+	S3SecretKey         string
+	S3RootPrefix        string
+	S3CatalogPython     string
+	S3CatalogScript     string
 }
 
 type GenerateRequest struct {
 	Mode                string       `json:"mode"`
 	ReferenceImage      string       `json:"reference_image"`
+	StartImg            string       `json:"startimg"`
+	EndImg              string       `json:"endimg"`
 	QwenExtraImage      string       `json:"qwen_extra_image"`
 	PoseImage           string       `json:"pose_image"`
 	Prompt              string       `json:"prompt"`
+	Frames              int          `json:"frames"`
 	QwenSwapPrompt      string       `json:"qwen_swap_prompt"`
 	QwenEditPrompt      string       `json:"qwen_edit_prompt"`
 	QwenModel           string       `json:"qwen_model"`
@@ -142,6 +150,7 @@ type GenerateResponse struct {
 	FinalURLs        []string               `json:"final_urls,omitempty"`
 	FinalVideoURL    string                 `json:"final_video_url,omitempty"`
 	FinalVideoURLs   []string               `json:"final_video_urls,omitempty"`
+	SegmentVideoURLs []string               `json:"segment_video_urls,omitempty"`
 	IntermediateURLs []string               `json:"intermediate_urls,omitempty"`
 	Meta             map[string]interface{} `json:"meta,omitempty"`
 	Raw              map[string]interface{} `json:"raw,omitempty"`
@@ -165,18 +174,33 @@ type comfyImage struct {
 	Type      string `json:"type"`
 }
 
+const (
+	qwenAPIURL                     = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+	qwenModelDefault               = "qwen-image-2.0-pro"
+	qwenDataInspectionHeader       = "{\"input\":\"disable\", \"output\":\"disable\"}"
+	qwenDefaultSwapPrompt          = "以图1为最终画面底图，严格保留图1的人物姿势、构图、服装、光照、背景和沙滩环境；仅将图2中的面部特征自然融合到图1人物脸上，保持真实自然、五官清晰、肤质统一；图3如存在，仅作为辅助参考，不要改变其他区域。"
+	qwenDefaultPoseFusionPrompt    = "以图1的pose图作为最终构图底图，严格保留人物姿势、肢体角度、镜头、服装、场景和光照；将图2的face图中的面部身份特征自然融合到图1人物脸上；保持五官清晰、肤质统一、真实摄影感，不要改动背景、衣服、身体姿态或镜头结构，融合结果要自然连贯。"
+	qwenDefaultEditPrompt          = "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}"
+	qwenDirectPoseFusionMode       = "qwen_pose_fusion"
+	wanExtendAnyFrameMode          = "wan2_2_i2v_extend_any_frame"
+	wanExtendAnyFrameModel         = "wan2.2-kf2v-flash"
+	wanExtendAnyFrameSegmentLimit  = 81
+	wanExtendAnyFrameDefaultPrompt = "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，动作自然连贯，镜头稳定，细节清晰，电影感成片"
+)
+
 func NewApp() (*App, error) {
 	repoRoot := mustGetwd()
 	cfg := Config{
-		Addr:             envOrDefault("V16WEB_ADDR", ":8080"),
-		RepoRoot:         repoRoot,
-		FrontendDist:     filepath.Join(repoRoot, "frontend", "dist"),
-		WorkflowTemplate: filepath.Join(repoRoot, "workflows", "pulid_sdxl_workflow_web_api.json"),
-		KeyEnvFile:       envOrDefault("KEY_ENV_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "key.env"))),
-		S3CredsFile:      envOrDefault("S3_CREDENTIALS_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "s3-credentials.txt"))),
-		S3RootPrefix:     envOrDefault("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models"),
-		S3Region:         envOrDefault("S3_REGION", "eu-ro-1"),
-		S3CatalogScript:  envOrDefault("S3_CATALOG_SCRIPT", filepath.Join(repoRoot, "scripts", "list_model_catalog.py")),
+		Addr:                envOrDefault("V16WEB_ADDR", ":8080"),
+		RepoRoot:            repoRoot,
+		FrontendDist:        filepath.Join(repoRoot, "frontend", "dist"),
+		WorkflowTemplate:    filepath.Join(repoRoot, "workflows", "pulid_sdxl_workflow_web_api.json"),
+		WanWorkflowTemplate: filepath.Join(repoRoot, "workflows", "wan2_2_i2v_extend_any_frame_api.json"),
+		KeyEnvFile:          envOrDefault("KEY_ENV_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "key.env"))),
+		S3CredsFile:         envOrDefault("S3_CREDENTIALS_FILE", filepath.Clean(filepath.Join(repoRoot, "..", "s3-credentials.txt"))),
+		S3RootPrefix:        envOrDefault("S3_MODEL_ROOT_PREFIX", "runpod-slim/ComfyUI/models"),
+		S3Region:            envOrDefault("S3_REGION", "eu-ro-1"),
+		S3CatalogScript:     envOrDefault("S3_CATALOG_SCRIPT", filepath.Join(repoRoot, "scripts", "list_model_catalog.py")),
 	}
 	cfg.S3CatalogPython = detectCatalogPython()
 	loadKeyEnvFile(cfg.KeyEnvFile)
@@ -301,6 +325,47 @@ func (a *App) handleRenderWorkflow(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if req.Mode == qwenDirectPoseFusionMode {
+		writeJSON(w, http.StatusOK, RenderResponse{
+			Mode:   req.Mode,
+			Engine: "qwen",
+			Warnings: []string{
+				"qwen_pose_fusion uses direct DashScope fusion and has no Comfy workflow",
+			},
+			NormalizedInput: req,
+			RenderedWorkflow: map[string]interface{}{
+				"mode": req.Mode,
+				"note": "Direct Qwen fusion preview. Face image is image 2 and pose image is image 1.",
+			},
+		})
+		return
+	}
+	if req.Mode == wanExtendAnyFrameMode {
+		segmentCount := 1
+		if req.Frames > 0 {
+			segmentCount = (req.Frames + wanExtendAnyFrameSegmentLimit - 1) / wanExtendAnyFrameSegmentLimit
+		}
+		writeJSON(w, http.StatusOK, RenderResponse{
+			Mode:   req.Mode,
+			Engine: "wan",
+			Warnings: []string{
+				"wan2.2 i2v extend mode is orchestrated by the RunPod worker and has no Comfy workflow",
+			},
+			NormalizedInput: req,
+			RenderedWorkflow: map[string]interface{}{
+				"mode":              req.Mode,
+				"segment_limit":     wanExtendAnyFrameSegmentLimit,
+				"segment_count":     segmentCount,
+				"frames":            req.Frames,
+				"workflow_template": a.Config.WanWorkflowTemplate,
+				"startimg_required": true,
+				"endimg_optional":   true,
+				"prompt_field":      "prompt",
+				"final_output":      "merged_video + per-segment_videos",
+			},
+		})
+		return
+	}
 	rendered, warnings, err := a.renderWorkflow(req, false)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -319,6 +384,21 @@ func (a *App) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeGenerateRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Mode == qwenDirectPoseFusionMode {
+		resp, err := a.generateWithQwenPoseFusion(r.Context(), req)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	if req.Mode == wanExtendAnyFrameMode && a.engine() != "runpod" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "wan2.2 i2v extend mode currently requires the RunPod worker path.",
+		})
 		return
 	}
 
@@ -525,7 +605,11 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		return nil, nil, err
 	}
 
-	raw, err := os.ReadFile(a.Config.WorkflowTemplate)
+	templatePath := a.Config.WorkflowTemplate
+	if req.Mode == wanExtendAnyFrameMode && a.Config.WanWorkflowTemplate != "" {
+		templatePath = a.Config.WanWorkflowTemplate
+	}
+	raw, err := os.ReadFile(templatePath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -547,7 +631,7 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		f := false
 		req.EnablePulid = &f
 	}
-	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" || req.Mode == qwenDirectPoseFusionMode || req.Mode == wanExtendAnyFrameMode {
 		f := false
 		req.EnablePulid = &f
 	}
@@ -589,7 +673,7 @@ func (a *App) renderWorkflow(req GenerateRequest, requireMedia bool) (map[string
 		delete(nodes, "22")
 		delete(nodes, "23")
 		delete(nodes, "27")
-	} else if req.Mode == "text_only" || req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+	} else if req.Mode == "text_only" || req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" || req.Mode == qwenDirectPoseFusionMode {
 		nodes["14"]["inputs"].(map[string]interface{})["positive"] = []interface{}{"2", 0}
 		nodes["14"]["inputs"].(map[string]interface{})["negative"] = []interface{}{"3", 0}
 		delete(nodes, "4")
@@ -788,6 +872,9 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 	input := map[string]interface{}{
 		"mode":                   req.Mode,
 		"reference_image":        req.ReferenceImage,
+		"startimg":               req.StartImg,
+		"endimg":                 req.EndImg,
+		"frames":                 req.Frames,
 		"prompt":                 req.Prompt,
 		"qwen_swap_prompt":       req.QwenSwapPrompt,
 		"qwen_edit_prompt":       req.QwenEditPrompt,
@@ -921,10 +1008,26 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 						out.FinalURLs = append(out.FinalURLs, addCacheBust(toString(u), cacheBust))
 					}
 				}
+				if videoURL := addCacheBust(toString(output["final_video_url"]), cacheBust); videoURL != "" {
+					out.FinalVideoURL = videoURL
+				}
+				if urls, ok := output["final_video_urls"].([]interface{}); ok {
+					for _, u := range urls {
+						out.FinalVideoURLs = append(out.FinalVideoURLs, addCacheBust(toString(u), cacheBust))
+					}
+				}
+				if urls, ok := output["segment_video_urls"].([]interface{}); ok {
+					for _, u := range urls {
+						out.SegmentVideoURLs = append(out.SegmentVideoURLs, addCacheBust(toString(u), cacheBust))
+					}
+				}
 				if urls, ok := output["intermediate_urls"].([]interface{}); ok {
 					for _, u := range urls {
 						out.IntermediateURLs = append(out.IntermediateURLs, addCacheBust(toString(u), cacheBust))
 					}
+				}
+				if out.FinalVideoURL == "" && len(out.FinalVideoURLs) > 0 {
+					out.FinalVideoURL = out.FinalVideoURLs[0]
 				}
 				out.Meta = map[string]interface{}{
 					"output": output,
@@ -935,6 +1038,180 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 			return nil, fmt.Errorf("runpod job failed: %s", mustJSON(data))
 		}
 	}
+}
+
+func (a *App) generateWithQwenPoseFusion(ctx context.Context, req GenerateRequest) (*GenerateResponse, error) {
+	req = normalizeRequest(req)
+	if err := validateRequest(req, true); err != nil {
+		return nil, err
+	}
+	req.RequestID = firstNonEmpty(req.RequestID, fmt.Sprintf("qwen-%d", time.Now().UnixNano()))
+	qwenPrompt := strings.TrimSpace(req.Prompt)
+	if qwenPrompt == "" {
+		qwenPrompt = qwenDefaultPoseFusionPrompt
+	}
+	qwenModel := strings.TrimSpace(req.QwenModel)
+	if qwenModel == "" {
+		qwenModel = qwenModelDefault
+	}
+	qwenRaw, err := a.callDashScopeQwenPoseFusion(ctx, req.ReferenceImage, req.PoseImage, qwenPrompt, strings.TrimSpace(req.NegativePrompt), qwenModel, strings.TrimSpace(req.QwenSize))
+	if err != nil {
+		return nil, err
+	}
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(qwenRaw)
+	return &GenerateResponse{
+		OK:        true,
+		Mode:      req.Mode,
+		Engine:    "qwen",
+		Warnings:  []string{"qwen_pose_fusion uses direct DashScope fusion and does not run the Comfy workflow"},
+		RequestID: req.RequestID,
+		FinalURL:  dataURL,
+		FinalURLs: []string{dataURL},
+		Meta: map[string]interface{}{
+			"mode":         req.Mode,
+			"pose_mode":    "direct_qwen_fusion",
+			"qwen_model":   qwenModel,
+			"final_format": "png",
+		},
+	}, nil
+}
+
+func (a *App) callDashScopeQwenPoseFusion(ctx context.Context, faceMedia, poseMedia, prompt, negativePrompt, model, sizeOverride string) ([]byte, error) {
+	apiKey := strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY"))
+	if apiKey == "" {
+		return nil, errors.New("DASHSCOPE_API_KEY is required for qwen pose fusion mode")
+	}
+	faceBytes, faceName, err := readMedia(faceMedia, "face")
+	if err != nil {
+		return nil, err
+	}
+	poseBytes, poseName, err := readMedia(poseMedia, "pose")
+	if err != nil {
+		return nil, err
+	}
+	faceInput, _, err := qwenImageBytesToDataURL(faceBytes, faceName)
+	if err != nil {
+		return nil, err
+	}
+	poseInput, sizeText, err := qwenImageBytesToDataURL(poseBytes, poseName)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(sizeOverride) != "" {
+		sizeText = strings.TrimSpace(sizeOverride)
+	}
+	params := map[string]interface{}{
+		"n":               1,
+		"negative_prompt": strings.TrimSpace(negativePrompt),
+		"prompt_extend":   false,
+		"watermark":       false,
+		"size":            sizeText,
+	}
+	if strings.TrimSpace(negativePrompt) == "" {
+		params["negative_prompt"] = " "
+	}
+	payload := map[string]interface{}{
+		"model": model,
+		"input": map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role": "user",
+					"content": []interface{}{
+						map[string]interface{}{"image": poseInput},
+						map[string]interface{}{"image": faceInput},
+						map[string]interface{}{"text": prompt},
+					},
+				},
+			},
+		},
+		"parameters": params,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, qwenAPIURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("X-DashScope-DataInspection", qwenDataInspectionHeader)
+	resp, err := a.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("dashscope qwen pose fusion failed: %s", string(b))
+	}
+	var respJSON map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respJSON); err != nil {
+		return nil, err
+	}
+	imageURL, err := extractDashScopeImageURL(respJSON)
+	if err != nil {
+		return nil, err
+	}
+	imgReq, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	imgResp, err := a.httpClient.Do(imgReq)
+	if err != nil {
+		return nil, err
+	}
+	defer imgResp.Body.Close()
+	if imgResp.StatusCode >= 300 {
+		b, _ := io.ReadAll(imgResp.Body)
+		return nil, fmt.Errorf("dashscope qwen pose fusion image download failed: %s", string(b))
+	}
+	return io.ReadAll(imgResp.Body)
+}
+
+func qwenImageBytesToDataURL(blob []byte, filename string) (string, string, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(blob))
+	if err != nil {
+		return "", "", err
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		mimeType = "image/jpeg"
+	} else if idx := strings.Index(mimeType, ";"); idx >= 0 {
+		mimeType = mimeType[:idx]
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(blob)), fmt.Sprintf("%d*%d", cfg.Width, cfg.Height), nil
+}
+
+func extractDashScopeImageURL(respJSON map[string]interface{}) (string, error) {
+	output, _ := respJSON["output"].(map[string]interface{})
+	if output != nil {
+		if choices, ok := output["choices"].([]interface{}); ok {
+			for _, choice := range choices {
+				choiceMap, _ := choice.(map[string]interface{})
+				if choiceMap == nil {
+					continue
+				}
+				message, _ := choiceMap["message"].(map[string]interface{})
+				if message == nil {
+					continue
+				}
+				content, _ := message["content"].([]interface{})
+				for _, item := range content {
+					itemMap, _ := item.(map[string]interface{})
+					if itemMap == nil {
+						continue
+					}
+					if imageURL := strings.TrimSpace(toString(itemMap["image"])); imageURL != "" {
+						return imageURL, nil
+					}
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("dashscope response missing image url: %s", mustJSON(respJSON))
 }
 
 func (a *App) waitComfyHistory(ctx context.Context, promptID string) (map[string]interface{}, error) {
@@ -1076,20 +1353,38 @@ func decodeGenerateRequest(r *http.Request) (GenerateRequest, error) {
 }
 
 func normalizeRequest(req GenerateRequest) GenerateRequest {
-	req.Mode = normalizeMode(req.Mode, req.ReferenceImage, req.PoseImage)
-	req.BatchSize = firstPositive(req.BatchSize, 1)
-	req.Width = firstPositive(req.Width, 832)
-	req.Height = firstPositive(req.Height, 1216)
+	req.Mode = normalizeMode(req.Mode, req.ReferenceImage, req.PoseImage, req.StartImg)
+	if req.Mode == wanExtendAnyFrameMode {
+		req.BatchSize = firstPositive(req.BatchSize, 1)
+		req.Width = firstPositive(req.Width, 480)
+		req.Height = firstPositive(req.Height, 832)
+		req.Steps = firstPositive(req.Steps, 4)
+		req.CFG = firstPositiveFloat(req.CFG, 1)
+		req.SamplerName = firstNonEmpty(req.SamplerName, "euler")
+		req.Scheduler = firstNonEmpty(req.Scheduler, "simple")
+	} else {
+		req.BatchSize = firstPositive(req.BatchSize, 1)
+		req.Width = firstPositive(req.Width, 832)
+		req.Height = firstPositive(req.Height, 1216)
+	}
 	req.BaseSteps = firstPositive(req.BaseSteps, 8)
-	req.Steps = firstPositive(req.Steps, 40)
+	if req.Mode != wanExtendAnyFrameMode {
+		req.Steps = firstPositive(req.Steps, 40)
+	}
 	req.BaseCFG = firstPositiveFloat(req.BaseCFG, 4)
-	req.CFG = firstPositiveFloat(req.CFG, 4)
+	if req.Mode != wanExtendAnyFrameMode {
+		req.CFG = firstPositiveFloat(req.CFG, 4)
+	}
 	req.BaseDenoise = firstPositiveFloat(req.BaseDenoise, 1)
-	req.Denoise = firstPositiveFloat(req.Denoise, 1)
+	if req.Mode != wanExtendAnyFrameMode {
+		req.Denoise = firstPositiveFloat(req.Denoise, 1)
+	}
 	req.BaseSamplerName = firstNonEmpty(req.BaseSamplerName, "dpmpp_2m_sde")
 	req.BaseScheduler = firstNonEmpty(req.BaseScheduler, "karras")
-	req.SamplerName = firstNonEmpty(req.SamplerName, "dpmpp_2m_sde")
-	req.Scheduler = firstNonEmpty(req.Scheduler, "karras")
+	if req.Mode != wanExtendAnyFrameMode {
+		req.SamplerName = firstNonEmpty(req.SamplerName, "dpmpp_2m_sde")
+		req.Scheduler = firstNonEmpty(req.Scheduler, "karras")
+	}
 	req.CNDepthStrength = firstPositiveFloat(req.CNDepthStrength, 0.6)
 	req.CNPoseStrength = firstPositiveFloat(req.CNPoseStrength, 0.6)
 	req.CNDepthStartPercent = clampDefault(req.CNDepthStartPercent, 0)
@@ -1100,11 +1395,20 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.PulidStartAt = clampDefault(req.PulidStartAt, 0.5)
 	req.PulidEndAt = clampDefault(req.PulidEndAt, 1)
 	req.PulidMethod = firstNonEmpty(req.PulidMethod, "fidelity")
-	req.QwenSwapPrompt = firstNonEmpty(req.QwenSwapPrompt, "将参考图中的人脸自然融合到生成图人物上，保持姿势、构图、光照、背景和服装不变，保证真实自然，五官清晰，肤质真实。")
-	req.QwenEditPrompt = firstNonEmpty(req.QwenEditPrompt, "将图中的角色脸部特征形象进行调整，使其符合如下描述中关于脸部的特征描述:{{生图提示词的主提示词变量}}")
-	req.QwenModel = firstNonEmpty(req.QwenModel, "qwen-image-edit-max")
+	req.QwenSwapPrompt = firstNonEmpty(req.QwenSwapPrompt, qwenDefaultSwapPrompt)
+	req.QwenEditPrompt = firstNonEmpty(req.QwenEditPrompt, qwenDefaultEditPrompt)
+	if req.Mode == qwenDirectPoseFusionMode {
+		req.Prompt = firstNonEmpty(req.Prompt, qwenDefaultPoseFusionPrompt)
+	}
+	if req.Mode == wanExtendAnyFrameMode {
+		req.Prompt = firstNonEmpty(req.Prompt, wanExtendAnyFrameDefaultPrompt)
+	}
+	req.QwenModel = firstNonEmpty(req.QwenModel, qwenModelDefault)
 	req.QwenSize = strings.TrimSpace(req.QwenSize)
 	req.QwenExtraImage = strings.TrimSpace(req.QwenExtraImage)
+	req.StartImg = strings.TrimSpace(req.StartImg)
+	req.EndImg = strings.TrimSpace(req.EndImg)
+	req.Frames = firstPositive(req.Frames, wanExtendAnyFrameSegmentLimit)
 	req.CKPTName = firstNonEmpty(req.CKPTName, "SDXL_Photorealistic_Mix_nsfw.safetensors")
 	req.UpscaleModelName = firstNonEmpty(req.UpscaleModelName, "4x-UltraSharp.pth")
 	req.OutputFormat = firstNonEmpty(req.OutputFormat, "jpg")
@@ -1117,14 +1421,19 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	req.I2VAudioURL = strings.TrimSpace(req.I2VAudioURL)
 	if req.EnablePulid == nil {
 		b := req.Mode != "pose_only" && req.Mode != "text_only"
-		if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+		if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" || req.Mode == qwenDirectPoseFusionMode || req.Mode == wanExtendAnyFrameMode {
 			b = false
 		}
 		req.EnablePulid = &b
 	}
-	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" {
+	if req.Mode == "qwen_swap_face" || req.Mode == "qwen_edit_face" || req.Mode == qwenDirectPoseFusionMode || req.Mode == wanExtendAnyFrameMode {
 		f := false
 		req.EnablePulid = &f
+	}
+	if req.Mode == wanExtendAnyFrameMode {
+		f := false
+		req.EnableUpscale = &f
+		req.EnableI2V = &f
 	}
 	if req.EnableLora == nil {
 		b := len(req.Loras) > 0
@@ -1153,10 +1462,13 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 	return req
 }
 
-func normalizeMode(mode, referenceImage, poseImage string) string {
+func normalizeMode(mode, referenceImage, poseImage, startImg string) string {
 	switch strings.TrimSpace(mode) {
-	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face", "qwen_edit_face":
+	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face", qwenDirectPoseFusionMode, "qwen_edit_face", wanExtendAnyFrameMode:
 		return strings.TrimSpace(mode)
+	}
+	if strings.TrimSpace(startImg) != "" {
+		return wanExtendAnyFrameMode
 	}
 	if strings.TrimSpace(referenceImage) == "" && strings.TrimSpace(poseImage) == "" {
 		return "text_only"
@@ -1190,6 +1502,20 @@ func validateRequest(req GenerateRequest, requireMedia bool) error {
 	case "qwen_swap_face":
 		if req.ReferenceImage == "" && requireMedia {
 			return errors.New("reference_image is required for qwen_swap_face")
+		}
+	case "qwen_pose_fusion":
+		if req.ReferenceImage == "" && requireMedia {
+			return errors.New("reference_image is required for qwen_pose_fusion")
+		}
+		if req.PoseImage == "" && requireMedia {
+			return errors.New("pose_image is required for qwen_pose_fusion")
+		}
+	case wanExtendAnyFrameMode:
+		if req.StartImg == "" && requireMedia {
+			return errors.New("startimg is required for wan2_2_i2v_extend_any_frame")
+		}
+		if req.Frames <= 0 {
+			return errors.New("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
 		}
 	case "qwen_edit_face":
 		// prompt-guided Qwen edit uses the generated image as the base input.
