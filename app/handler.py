@@ -1246,8 +1246,8 @@ def _wan_use_comfy_backend(data: Dict) -> bool:
     return True
 
 
-def _apply_wan_lora_chain(prompt: Dict, loras: List[Dict]) -> List:
-    model_source = ["37", 0]
+def _apply_wan_lora_chain(prompt: Dict, loras: List[Dict], base_model: List = None) -> List:
+    model_source = base_model if base_model else ["37", 0]
     if not loras:
         return model_source
 
@@ -1347,16 +1347,17 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         prompt = load_json(WAN_WORKFLOW_API_PATH)
         start_image_filename = resolve_media_to_comfy_filename(current_start, f"wan_start_{request_id}_{idx + 1:02d}")
         if loras:
-            model_source = _apply_wan_lora_chain(prompt, loras)
+            high_model = _apply_wan_lora_chain(prompt, loras, base_model=["37", 0])
+            low_model = _apply_wan_lora_chain(prompt, loras, base_model=["100", 0])
             if "54" in prompt:
-                prompt["54"]["inputs"]["model"] = model_source
+                prompt["54"]["inputs"]["model"] = high_model
             if "101" in prompt:
-                prompt["101"]["inputs"]["model"] = model_source
+                prompt["101"]["inputs"]["model"] = low_model
         else:
             if "54" in prompt:
                 prompt["54"]["inputs"]["model"] = ["37", 0]
             if "101" in prompt:
-                prompt["101"]["inputs"]["model"] = ["37", 0]
+                prompt["101"]["inputs"]["model"] = ["100", 0]
         if "150" in prompt:
             prompt.pop("150", None)
         if "151" in prompt:
