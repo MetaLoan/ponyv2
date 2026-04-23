@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_DIR="${TARGET_DIR:-/workspace/runpod-slim/ComfyUI/models/checkpoints}"
+TARGET_DIR="${TARGET_DIR:-/workspace/runpod-slim/ComfyUI/models/unet}"
 KEY_FILE="${KEY_FILE:-/workspace/key.env}"
 Q8H_URL="${Q8H_URL:-https://civitai.com/api/download/models/2540892}"
 Q8L_URL="${Q8L_URL:-https://civitai.com/api/download/models/2540896}"
-Q8H_NAME="${Q8H_NAME:-WAN2.2-NSFW-FastMove-V2-Q8H.gguf}"
-Q8L_NAME="${Q8L_NAME:-WAN2.2-NSFW-FastMove-V2-Q8L.gguf}"
+Q8H_NAME="${Q8H_NAME:-WAN2.2-NSFW-FastMove-V2-H.safetensors}"
+Q8L_NAME="${Q8L_NAME:-WAN2.2-NSFW-FastMove-V2-L.safetensors}"
 
 token="${CIVITAI_TOKEN:-${civitai:-}}"
 if [[ -z "$token" && -f "$KEY_FILE" ]]; then
