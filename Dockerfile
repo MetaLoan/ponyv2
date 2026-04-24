@@ -23,11 +23,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # ComfyUI runtime requires torch explicitly in most clean CUDA base images.
-# Pin to CUDA 12.4 wheels to match this image.
+# Pin to CUDA 12.8 Nightly to support Blackwell (sm_120) and RTX 5090
 RUN python3 -m pip install -U pip setuptools wheel && \
-    python3 -m pip install \
-      --index-url https://download.pytorch.org/whl/cu124 \
-      torch torchvision torchaudio
+    python3 -m pip install --pre \
+      --index-url https://download.pytorch.org/whl/nightly/cu128 \
+      torch torchvision torchaudio && \
+    python3 -m pip install sageattention xformers
 
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
