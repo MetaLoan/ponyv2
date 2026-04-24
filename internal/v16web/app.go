@@ -1857,7 +1857,7 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 	sysPrompt := "You are an expert video director. Split the user's video concept into " + strconv.Itoa(req.Segments) + " continuous chronological segments. Each segment must be a detailed image-to-video prompt in English describing the action in that specific timeframe. Do NOT output markdown code blocks. Output ONLY a raw valid JSON array of " + strconv.Itoa(req.Segments) + " strings."
 
 	payload := map[string]interface{}{
-		"model": "qwen-max",
+		"model": "qwen-plus",
 		"input": map[string]interface{}{
 			"messages": []map[string]interface{}{
 				{"role": "system", "content": sysPrompt},
@@ -1870,7 +1870,7 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := json.Marshal(payload)
 
-	httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: err.Error()})
 		return
