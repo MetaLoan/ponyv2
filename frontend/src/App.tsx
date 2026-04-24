@@ -516,7 +516,7 @@ function App() {
     qwen_swap_face: "Base image is generated first, then Qwen uses reference face image and optional image 3 for face swap.",
     qwen_pose_fusion: "Pose image + face image + prompt. Qwen fuses the face directly onto the pose image.",
     qwen_edit_face: "Base image is generated first, then Qwen edits the face directly from the prompt without a reference face image.",
-    wan2_2_i2v_extend_any_frame: "Start image + optional end image + prompt + frame count. Wan generates 81-frame segments, then merges them into one final video.",
+    wan2_2_i2v_extend_any_frame: "Start image + prompt + frame count. Generates video frames natively in a single pass and merges them.",
   }[mode];
 
   async function onRenderWorkflow() {
