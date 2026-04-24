@@ -66,8 +66,6 @@ export function useTasks() {
 }
 
 export function TaskCenter({ tasks, clearTasks }: { tasks: Task[]; clearTasks: () => void }) {
-  if (tasks.length === 0) return null;
-
   return (
     <div style={{ marginTop: "2rem", padding: "1rem", border: "1px solid #444", borderRadius: "8px", background: "#1e1e1e" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -77,7 +75,11 @@ export function TaskCenter({ tasks, clearTasks }: { tasks: Task[]; clearTasks: (
         </button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "1rem" }}>
-        {tasks.map((t) => (
+        {tasks.length === 0 ? (
+          <p style={{ color: "#888", textAlign: "center", fontStyle: "italic", margin: "1rem 0" }}>
+            No tasks in queue. Generate something to see it here!
+          </p>
+        ) : tasks.map((t) => (
           <div key={t.id} style={{ padding: "10px", border: "1px solid #333", borderRadius: "4px", background: "#252525" }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9em" }}>
               <span style={{ color: "#aaa" }}>{new Date(t.timestamp).toLocaleTimeString()} - {t.mode}</span>
