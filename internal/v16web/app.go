@@ -1870,13 +1870,14 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := json.Marshal(payload)
 
-	httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: err.Error()})
 		return
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("X-DashScope-DataInspection", `{"input":"disable", "output": "disable"}`)
 
 	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
