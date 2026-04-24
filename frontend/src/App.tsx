@@ -181,6 +181,7 @@ function App() {
   const [wanSeeds, setWanSeeds] = useState<number[]>([]);
   const [wanPrompts, setWanPrompts] = useState<string[]>([]);
   const [wanSegmentFrames, setWanSegmentFrames] = useState<number>(161);
+  const [autoSegmentPrompts, setAutoSegmentPrompts] = useState(false);
   const [isAiSplitting, setIsAiSplitting] = useState(false);
   const [i2vAudioURL, setI2VAudioURL] = useState("");
   const [i2vPromptExtend, setI2VPromptExtend] = useState(true);
@@ -360,6 +361,7 @@ function App() {
       body.base_cfg = baseCfg;
       body.cfg = cfg;
       body.segment_limit = wanSegmentFrames;
+      body.auto_segment_prompts = autoSegmentPrompts;
       const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
       body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
       body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
@@ -1072,13 +1074,19 @@ function App() {
                 <div className="stack" style={{ marginTop: "1rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h4 style={{ margin: "0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
-                    <button 
-                      onClick={handleAiSplit} 
-                      disabled={isAiSplitting}
-                      style={{ padding: "4px 12px", fontSize: "0.8rem", cursor: "pointer", background: "linear-gradient(45deg, #8a2be2, #4b0082)", border: "none", color: "white", borderRadius: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-                    >
-                      {isAiSplitting ? "✨ Orchestrating..." : "✨ AI Auto-Script"}
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.8rem", cursor: "pointer" }}>
+                        <input type="checkbox" checked={autoSegmentPrompts} onChange={(e) => setAutoSegmentPrompts(e.target.checked)} />
+                        Auto-Generate Segment Prompts
+                      </label>
+                      <button 
+                        onClick={handleAiSplit} 
+                        disabled={isAiSplitting}
+                        style={{ padding: "4px 12px", fontSize: "0.8rem", cursor: "pointer", background: "linear-gradient(45deg, #8a2be2, #4b0082)", border: "none", color: "white", borderRadius: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {isAiSplitting ? "✨ Orchestrating..." : "✨ AI Auto-Script (Manual)"}
+                      </button>
+                    </div>
                   </div>
                   <div className="stack" style={{ gap: '1rem' }}>
                     {Array.from({ length: Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)) }).map((_, idx) => (

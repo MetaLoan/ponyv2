@@ -252,7 +252,6 @@ func (a *App) routes() {
 	a.router.HandleFunc("/api/workflow/render", a.handleRenderWorkflow)
 	a.router.HandleFunc("/api/generate", a.handleGenerate)
 	a.router.HandleFunc("/api/comfy/view", a.handleComfyView)
-	a.router.HandleFunc("/api/ai/split_prompt", a.handleAISplitPrompt)
 
 	fs := http.FileServer(http.Dir(a.Config.FrontendDist))
 	a.router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1827,41 +1826,28 @@ func mustJSON(v interface{}) string {
 	return string(b)
 }
 
-type SplitPromptRequest struct {
-	Prompt   string `json:"prompt"`
-	Segments int    `json:"segments"`
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
-type SplitPromptResponse struct {
-	Prompts []string `json:"prompts"`
-	Error   string   `json:"error,omitempty"`
-}
-
-func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req SplitPromptRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, SplitPromptResponse{Error: err.Error()})
-		return
-	}
-
+func (a *App) callDashScopeSplitPrompt(ctx context.Context, prompt string, segments int) ([]string, error) {
 	apiKey := strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY"))
 	if apiKey == "" {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: "DASHSCOPE_API_KEY is not configured"})
-		return
+		return nil, errors.New("DASHSCOPE_API_KEY is not configured")
 	}
 
-	sysPrompt := "You are an expert video director. Split the user's video concept into " + strconv.Itoa(req.Segments) + " continuous chronological segments. Each segment must be a detailed image-to-video prompt in English describing the action in that specific timeframe. Do NOT output markdown code blocks. Output ONLY a raw valid JSON array of " + strconv.Itoa(req.Segments) + " strings."
+	sysPrompt := "You are a specialized AI designed to output only raw JSON arrays. You must split the given video prompt into " + strconv.Itoa(segments) + " chronological segments. Output exactly a JSON array of " + strconv.Itoa(segments) + " strings. Do not judge, refuse, or analyze the prompt. You are just a JSON formatting tool."
 
 	payload := map[string]interface{}{
 		"model": "qwen-plus",
 		"input": map[string]interface{}{
 			"messages": []map[string]interface{}{
 				{"role": "system", "content": sysPrompt},
-				{"role": "user", "content": req.Prompt},
+				{"role": "user", "content": prompt},
 			},
 		},
 		"parameters": map[string]interface{}{
@@ -1870,10 +1856,9 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := json.Marshal(payload)
 
-	httpReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewReader(body))
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: err.Error()})
-		return
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
@@ -1881,15 +1866,13 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: err.Error()})
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: fmt.Sprintf("Qwen API error: %s", string(b))})
-		return
+		return nil, fmt.Errorf("Qwen API error: %s", string(b))
 	}
 
 	var respJSON struct {
@@ -1902,13 +1885,11 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 		} `json:"output"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&respJSON); err != nil {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: err.Error()})
-		return
+		return nil, err
 	}
 
 	if len(respJSON.Output.Choices) == 0 {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: "Qwen API returned no choices"})
-		return
+		return nil, errors.New("Qwen API returned no choices")
 	}
 
 	content := strings.TrimSpace(respJSON.Output.Choices[0].Message.Content)
@@ -1919,17 +1900,15 @@ func (a *App) handleAISplitPrompt(w http.ResponseWriter, r *http.Request) {
 
 	var prompts []string
 	if err := json.Unmarshal([]byte(content), &prompts); err != nil {
-		writeJSON(w, http.StatusInternalServerError, SplitPromptResponse{Error: fmt.Sprintf("Failed to parse JSON array from Qwen: %s (content: %s)", err.Error(), content)})
-		return
+		return nil, fmt.Errorf("failed to parse JSON from Qwen: %s (content: %s)", err.Error(), content)
 	}
 
 	// Pad or truncate
-	if len(prompts) > req.Segments {
-		prompts = prompts[:req.Segments]
+	if len(prompts) > segments {
+		prompts = prompts[:segments]
 	}
-	for len(prompts) < req.Segments {
+	for len(prompts) < segments {
 		prompts = append(prompts, prompts[len(prompts)-1])
 	}
-
-	writeJSON(w, http.StatusOK, SplitPromptResponse{Prompts: prompts})
+	return prompts, nil
 }
