@@ -125,6 +125,10 @@ type GenerateRequest struct {
 	I2VPromptExtend     *bool        `json:"i2v_prompt_extend"`
 	I2VWatermark        *bool        `json:"i2v_watermark"`
 	RequestID           string       `json:"request_id"`
+	WanSeeds            []int64      `json:"wan_seeds"`
+	WanPrompts          []string     `json:"wan_prompts"`
+	SegmentLimit        int          `json:"segment_limit"`
+	AutoSegmentPrompts  bool         `json:"auto_segment_prompts"`
 }
 
 type LoraConfig struct {
@@ -884,6 +888,27 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 	req = normalizeRequest(req)
 	warnings := []string{}
 
+	if req.AutoSegmentPrompts && req.Mode == wanExtendAnyFrameMode && req.Prompt != "" {
+		segmentLimit := req.SegmentLimit
+		if segmentLimit <= 0 {
+			segmentLimit = wanExtendAnyFrameSegmentLimit
+		}
+		frames := req.Frames
+		if frames <= 0 {
+			frames = segmentLimit
+		}
+		frames = maxInt(frames, 2)
+		segmentCount := maxInt(1, (frames-1+segmentLimit-2)/(segmentLimit-1))
+		if segmentCount > 1 {
+			prompts, err := a.callDashScopeSplitPrompt(ctx, req.Prompt, segmentCount)
+			if err == nil && len(prompts) == segmentCount {
+				req.WanPrompts = prompts
+			} else {
+				warnings = append(warnings, fmt.Sprintf("AI Auto-Segment failed: %v", err))
+			}
+		}
+	}
+
 	input := map[string]interface{}{
 		"mode":                   req.Mode,
 		"reference_image":        req.ReferenceImage,
@@ -895,6 +920,9 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"wan_clip_name":          req.WanClipName,
 		"wan_unet_high_name":     req.WanUnetHighName,
 		"wan_unet_low_name":      req.WanUnetLowName,
+		"wan_seeds":              req.WanSeeds,
+		"wan_prompts":            req.WanPrompts,
+		"segment_limit":          req.SegmentLimit,
 		"prompt":                 req.Prompt,
 		"qwen_swap_prompt":       req.QwenSwapPrompt,
 		"qwen_edit_prompt":       req.QwenEditPrompt,
