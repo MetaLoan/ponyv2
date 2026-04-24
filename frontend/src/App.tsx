@@ -181,6 +181,7 @@ function App() {
   const [wanSeeds, setWanSeeds] = useState<number[]>([]);
   const [wanPrompts, setWanPrompts] = useState<string[]>([]);
   const [wanSegmentFrames, setWanSegmentFrames] = useState<number>(161);
+  const [isAiSplitting, setIsAiSplitting] = useState(false);
   const [i2vAudioURL, setI2VAudioURL] = useState("");
   const [i2vPromptExtend, setI2VPromptExtend] = useState(true);
   const [i2vWatermark, setI2VWatermark] = useState(false);
@@ -572,6 +573,36 @@ function App() {
       setError(String(err));
     } finally {
       setBusy("");
+    }
+  }
+
+  async function handleAiSplit() {
+    if (!wanExtendPrompt) {
+      setError("Please enter a main prompt first.");
+      return;
+    }
+    const segmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
+    if (segmentCount <= 1) {
+      setError("Total frames must exceed segment frames to use AI split.");
+      return;
+    }
+    setIsAiSplitting(true);
+    setError("");
+    try {
+      const resp = await fetch("/api/ai/split_prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: wanExtendPrompt, segments: segmentCount }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || "Failed to call AI split");
+      }
+      setWanPrompts(data.prompts || []);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsAiSplitting(false);
     }
   }
 
@@ -1039,7 +1070,16 @@ function App() {
               </div>
               {frames > wanSegmentFrames && (
                 <div className="stack" style={{ marginTop: "1rem" }}>
-                  <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4 style={{ margin: "0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
+                    <button 
+                      onClick={handleAiSplit} 
+                      disabled={isAiSplitting}
+                      style={{ padding: "4px 12px", fontSize: "0.8rem", cursor: "pointer", background: "linear-gradient(45deg, #8a2be2, #4b0082)", border: "none", color: "white", borderRadius: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+                    >
+                      {isAiSplitting ? "✨ Orchestrating..." : "✨ AI Auto-Script"}
+                    </button>
+                  </div>
                   <div className="stack" style={{ gap: '1rem' }}>
                     {Array.from({ length: Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)) }).map((_, idx) => (
                       <div key={idx} style={{ padding: "0.5rem", border: "1px solid #444", borderRadius: "4px" }}>
