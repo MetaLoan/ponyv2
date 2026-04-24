@@ -170,18 +170,39 @@ export function TaskCenter({ tasks, clearTasks }: { tasks: Task[]; clearTasks: (
                 ) : t.status}
               </strong>
             </div>
-            <p style={{ fontSize: "0.85em", color: "#eee", margin: "0 0 8px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={t.prompt}>
+            <p style={{ fontSize: "0.85em", color: "#eee", margin: "0 0 4px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={t.prompt}>
               {t.prompt}
             </p>
-            {t.status === "COMPLETED" && t.result && t.result.final_video_url && (
-              <a href={t.result.final_video_url} target="_blank" rel="noreferrer" style={{ color: "#4caf50", fontSize: "0.9em", display: "inline-block", background: "rgba(76, 175, 80, 0.1)", padding: "4px 8px", borderRadius: "4px", textDecoration: "none" }}>
-                ▶️ Watch Video
-              </a>
-            )}
-            {t.status === "COMPLETED" && t.result && !t.result.final_video_url && t.result.final_url && (
-              <a href={t.result.final_url} target="_blank" rel="noreferrer" style={{ color: "#4caf50", fontSize: "0.9em", display: "inline-block", background: "rgba(76, 175, 80, 0.1)", padding: "4px 8px", borderRadius: "4px", textDecoration: "none" }}>
-                🖼️ View Image
-              </a>
+            <div style={{ fontSize: "0.7em", color: "#777", fontFamily: "monospace", marginBottom: "8px", userSelect: "all" }}>
+              ID: {t.result?.request_id || t.id}
+            </div>
+            {t.status === "COMPLETED" && t.result && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+                {(t.result.final_video_urls || t.result.final_video_url ? [t.result.final_video_url, ...(t.result.final_video_urls || [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) : []).map((url: string, idx: number) => (
+                  <div key={`fv-${idx}`} style={{ background: "#1a1a1a", padding: "6px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "0.75em", color: "#888", marginBottom: "4px" }}>Final Video {idx + 1}</div>
+                    <video src={url} controls playsInline style={{ width: "100%", borderRadius: "4px", backgroundColor: "#000", maxHeight: "250px", objectFit: "contain" }} />
+                  </div>
+                ))}
+                {(t.result.segment_video_urls || []).map((url: string, idx: number) => (
+                  <div key={`sv-${idx}`} style={{ background: "#1a1a1a", padding: "6px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "0.75em", color: "#888", marginBottom: "4px" }}>Segment Video {idx + 1}</div>
+                    <video src={url} controls playsInline style={{ width: "100%", borderRadius: "4px", backgroundColor: "#000", maxHeight: "250px", objectFit: "contain" }} />
+                  </div>
+                ))}
+                {(t.result.final_urls || t.result.final_url ? [t.result.final_url, ...(t.result.final_urls || [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) : []).map((url: string, idx: number) => (
+                  <div key={`fi-${idx}`} style={{ background: "#1a1a1a", padding: "6px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "0.75em", color: "#888", marginBottom: "4px" }}>Final Image {idx + 1}</div>
+                    <img src={url} alt={`Final ${idx + 1}`} style={{ width: "100%", borderRadius: "4px", display: "block" }} />
+                  </div>
+                ))}
+                {(t.result.intermediate_urls || []).map((url: string, idx: number) => (
+                  <div key={`int-${idx}`} style={{ background: "#1a1a1a", padding: "6px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "0.75em", color: "#888", marginBottom: "4px" }}>Intermediate {idx + 1}</div>
+                    <img src={url} alt={`Intermediate ${idx + 1}`} style={{ width: "100%", borderRadius: "4px", display: "block" }} />
+                  </div>
+                ))}
+              </div>
             )}
             {t.status === "FAILED" && t.result?.error && (
               <p style={{ color: "#f44336", fontSize: "0.8em", margin: "5px 0", background: "rgba(244, 67, 54, 0.1)", padding: "6px", borderRadius: "4px" }}>
