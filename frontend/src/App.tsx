@@ -179,6 +179,8 @@ function App() {
     "low quality, blurry, flicker, jitter, motion artifacts, deformed, extra limbs, bad proportions"
   );
   const [wanSeeds, setWanSeeds] = useState<number[]>([]);
+  const [wanPrompts, setWanPrompts] = useState<string[]>([]);
+  const [wanSegmentFrames, setWanSegmentFrames] = useState<number>(161);
   const [i2vAudioURL, setI2VAudioURL] = useState("");
   const [i2vPromptExtend, setI2VPromptExtend] = useState(true);
   const [i2vWatermark, setI2VWatermark] = useState(false);
@@ -356,7 +358,10 @@ function App() {
       body.steps = steps;
       body.base_cfg = baseCfg;
       body.cfg = cfg;
-      body.wan_seeds = Array.from({ length: Math.max(1, Math.ceil((frames - 1) / 80)) }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
+      body.segment_limit = wanSegmentFrames;
+      const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
+      body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
+      body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
     } else {
       body.width = width;
       body.height = height;
@@ -442,6 +447,8 @@ function App() {
     wanStartMedia,
     wanEndMedia,
     wanSeeds,
+    wanPrompts,
+    wanSegmentFrames,
     frames,
     wanUnetHighName,
     wanUnetLowName,
@@ -1023,25 +1030,43 @@ function App() {
             <div className="stack">
               <textarea rows={4} value={wanExtendPrompt} onChange={(e) => setWanExtendPrompt(e.target.value)} />
               <div className="inline">
-                <NumberField label="Duration (Seconds)" value={Math.floor((frames - 1) / 16)} onChange={(v) => setFrames(Math.max(1, v) * 16 + 1)} min={1} max={60} step={1} />
-                <NumberField label="Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
+                <NumberField label="Total Duration (Seconds)" value={Math.floor((frames - 1) / 16)} onChange={(v) => setFrames(Math.max(1, v) * 16 + 1)} min={1} max={60} step={1} />
+                <NumberField label="Total Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
               </div>
-              {frames > 81 && (
+              <div className="inline" style={{ marginTop: "0.5rem" }}>
+                <NumberField label="Segment Duration (Sec)" value={Math.floor((wanSegmentFrames - 1) / 16)} onChange={(v) => setWanSegmentFrames(Math.max(1, v) * 16 + 1)} min={1} max={30} step={1} />
+                <NumberField label="Segment Frames" value={wanSegmentFrames} onChange={setWanSegmentFrames} min={2} max={1000} step={1} />
+              </div>
+              {frames > wanSegmentFrames && (
                 <div className="stack" style={{ marginTop: "1rem" }}>
-                  <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Seeds</h4>
-                  <div className="inline" style={{ flexWrap: 'wrap' }}>
-                    {Array.from({ length: Math.ceil((frames - 1) / 80) }).map((_, idx) => (
-                      <NumberField 
-                        key={idx} 
-                        label={`Segment ${idx + 1}`} 
-                        value={wanSeeds[idx] ?? seed + idx} 
-                        onChange={(v) => {
-                          const newSeeds = [...wanSeeds];
-                          newSeeds[idx] = v;
-                          setWanSeeds(newSeeds);
-                        }} 
-                        min={0} max={9999999999999999} step={1} 
-                      />
+                  <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
+                  <div className="stack" style={{ gap: '1rem' }}>
+                    {Array.from({ length: Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)) }).map((_, idx) => (
+                      <div key={idx} style={{ padding: "0.5rem", border: "1px solid #444", borderRadius: "4px" }}>
+                        <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>Segment {idx + 1}</div>
+                        <NumberField 
+                          label="Seed" 
+                          value={wanSeeds[idx] ?? seed + idx} 
+                          onChange={(v) => {
+                            const newSeeds = [...wanSeeds];
+                            newSeeds[idx] = v;
+                            setWanSeeds(newSeeds);
+                          }} 
+                          min={0} max={9999999999999999} step={1} 
+                        />
+                        <div style={{ marginTop: "0.5rem" }}>
+                          <label style={{ display: "block", fontSize: "0.8rem", marginBottom: "0.2rem" }}>Segment Prompt (Leave blank to use main)</label>
+                          <textarea 
+                            rows={2} 
+                            value={wanPrompts[idx] || ""} 
+                            onChange={(e) => {
+                              const newPrompts = [...wanPrompts];
+                              newPrompts[idx] = e.target.value;
+                              setWanPrompts(newPrompts);
+                            }} 
+                          />
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>

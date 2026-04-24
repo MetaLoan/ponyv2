@@ -1345,9 +1345,10 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     if str(data.get("endimg", "")).strip():
         raise RuntimeError("WAN Comfy workflow does not yet support endimg; use the DashScope backend for endimg jobs")
 
-    frames = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    segment_limit = int(data.get("segment_limit", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    frames = int(data.get("frames", segment_limit) or segment_limit)
     frames = max(frames, 2)
-    segment_count = max(1, (frames - 1 + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 2) // (WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1))
+    segment_count = max(1, (frames - 1 + segment_limit - 2) // (segment_limit - 1))
     
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     negative_prompt = str(data.get("negative_prompt", "")).strip()
@@ -1360,7 +1361,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     current_start = str(data.get("startimg", "")).strip()
 
     for idx in range(segment_count):
-        segment_length = WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT
+        segment_length = segment_limit
         prompt = load_json(WAN_WORKFLOW_API_PATH)
         start_image_filename = resolve_media_to_comfy_filename(current_start, f"wan_start_{request_id}_{idx + 1:02d}")
         if loras:
@@ -1388,9 +1389,15 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             base_seed = int(data_copy.get("seed", 0) or 0)
             data_copy["seed"] = base_seed + idx
         
+        wan_prompts = data.get("wan_prompts", [])
+        if isinstance(wan_prompts, list) and len(wan_prompts) > idx and str(wan_prompts[idx]).strip():
+            current_prompt_text = str(wan_prompts[idx]).strip()
+        else:
+            current_prompt_text = prompt_text
+            
         _apply_wan_workflow_defaults(prompt, data_copy, start_image_filename, segment_length, idx + 1)
         if "6" in prompt:
-            prompt["6"]["inputs"]["text"] = prompt_text
+            prompt["6"]["inputs"]["text"] = current_prompt_text
         if "7" in prompt:
             prompt["7"]["inputs"]["text"] = negative_prompt
 
