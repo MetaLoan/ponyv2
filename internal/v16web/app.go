@@ -129,6 +129,7 @@ type GenerateRequest struct {
 	WanPrompts          []string     `json:"wan_prompts"`
 	SegmentLimit        int          `json:"segment_limit"`
 	AutoSegmentPrompts  bool         `json:"auto_segment_prompts"`
+	Async               bool         `json:"async"`
 }
 
 type LoraConfig struct {
@@ -256,6 +257,7 @@ func (a *App) routes() {
 	a.router.HandleFunc("/api/models/catalog", a.handleCatalog)
 	a.router.HandleFunc("/api/workflow/render", a.handleRenderWorkflow)
 	a.router.HandleFunc("/api/generate", a.handleGenerate)
+	a.router.HandleFunc("/api/status", a.handleStatus)
 	a.router.HandleFunc("/api/comfy/view", a.handleComfyView)
 
 	fs := http.FileServer(http.Dir(a.Config.FrontendDist))
@@ -1051,6 +1053,17 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 	if jobID == "" {
 		return nil, errors.New("missing RunPod job id")
 	}
+
+	if req.Async {
+		return &GenerateResponse{
+			OK:     true,
+			Mode:   req.Mode,
+			Engine: "runpod",
+			JobID:  jobID,
+			Status: "IN_QUEUE",
+		}, nil
+	}
+
 	statusURL := fmt.Sprintf("https://api.runpod.ai/v2/%s/status/%s", a.Config.RunPodEndpointID, jobID)
 	for {
 		time.Sleep(5 * time.Second)
@@ -1968,4 +1981,80 @@ func (a *App) callDashScopeSplitPrompt(ctx context.Context, prompt string, segme
 		prompts = append(prompts, prompts[len(prompts)-1])
 	}
 	return prompts, nil
+}
+
+func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
+	jobID := r.URL.Query().Get("job_id")
+	if jobID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing job_id"})
+		return
+	}
+
+	statusURL := fmt.Sprintf("https://api.runpod.ai/v2/%s/status/%s", a.Config.RunPodEndpointID, jobID)
+	reqStatus, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, statusURL, nil)
+	reqStatus.Header.Set("Authorization", "Bearer "+a.Config.RunPodAPIKey)
+	statusResp, err := a.httpClient.Do(reqStatus)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer statusResp.Body.Close()
+
+	var data map[string]interface{}
+	if err := json.NewDecoder(statusResp.Body).Decode(&data); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to decode runpod status"})
+		return
+	}
+	
+	status := toString(data["status"])
+	out := &GenerateResponse{
+		OK:     status == "COMPLETED" || status == "IN_PROGRESS" || status == "IN_QUEUE",
+		Engine: "runpod",
+		JobID:  jobID,
+		Status: status,
+		Raw:    data,
+	}
+
+	if status == "COMPLETED" {
+		if output, ok := data["output"].(map[string]interface{}); ok {
+			out.RequestID = toString(output["request_id"])
+			out.PromptID = toString(output["prompt_id"])
+			cacheBust := firstNonEmpty(out.RequestID, out.JobID, out.PromptID)
+			out.FinalURL = addCacheBust(toString(output["final_url"]), cacheBust)
+			if urls, ok := output["final_urls"].([]interface{}); ok {
+				for _, u := range urls {
+					out.FinalURLs = append(out.FinalURLs, addCacheBust(toString(u), cacheBust))
+				}
+			}
+			if videoURL := addCacheBust(toString(output["final_video_url"]), cacheBust); videoURL != "" {
+				out.FinalVideoURL = videoURL
+			}
+			if urls, ok := output["final_video_urls"].([]interface{}); ok {
+				for _, u := range urls {
+					out.FinalVideoURLs = append(out.FinalVideoURLs, addCacheBust(toString(u), cacheBust))
+				}
+			}
+			if urls, ok := output["segment_video_urls"].([]interface{}); ok {
+				for _, u := range urls {
+					out.SegmentVideoURLs = append(out.SegmentVideoURLs, addCacheBust(toString(u), cacheBust))
+				}
+			}
+			if urls, ok := output["intermediate_urls"].([]interface{}); ok {
+				for _, u := range urls {
+					out.IntermediateURLs = append(out.IntermediateURLs, addCacheBust(toString(u), cacheBust))
+				}
+			}
+			if out.FinalVideoURL == "" && len(out.FinalVideoURLs) > 0 {
+				out.FinalVideoURL = out.FinalVideoURLs[0]
+			}
+			out.Meta = map[string]interface{}{
+				"output": output,
+			}
+		}
+	} else if status == "FAILED" || status == "CANCELLED" || status == "TIMED_OUT" {
+		out.OK = false
+		out.Error = fmt.Sprintf("runpod job failed: %s", mustJSON(data))
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }

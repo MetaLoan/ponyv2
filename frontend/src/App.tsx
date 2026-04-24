@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useTasks, TaskCenter } from "./TaskCenter";
 
 type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame";
 type WanPreset = "manual" | "realistic_video" | "anime_video";
@@ -192,6 +193,7 @@ function App() {
   const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
   const [busy, setBusy] = useState<"" | "render" | "generate">("");
   const [error, setError] = useState("");
+  const { tasks, addTask, clearTasks } = useTasks();
   const [payloadJsonText, setPayloadJsonText] = useState("");
   const [payloadImportError, setPayloadImportError] = useState("");
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
@@ -342,6 +344,7 @@ function App() {
       negative_prompt: negativePrompt,
       enable_lora: enableLora,
       loras: cleanLoras,
+      async: true
     };
     if (isWanMode) {
       body.startimg = mediaToPayloadValue(wanStartMedia);
@@ -569,7 +572,19 @@ function App() {
       if (target === "render") {
         setRenderResult(json);
       } else {
-        setGenerateResult(json);
+        if (json.status === "IN_QUEUE" && json.job_id) {
+          addTask({
+            id: String(json.job_id),
+            job_id: String(json.job_id),
+            mode: mode,
+            prompt: String(payload.prompt || ""),
+            status: "IN_QUEUE",
+            timestamp: Date.now()
+          });
+          setGenerateResult(null);
+        } else {
+          setGenerateResult(json);
+        }
       }
     } catch (err) {
       setError(String(err));
@@ -1581,6 +1596,7 @@ function App() {
           )}
         </section>
       </main>
+      <TaskCenter tasks={tasks} clearTasks={clearTasks} />
     </div>
   );
 }
