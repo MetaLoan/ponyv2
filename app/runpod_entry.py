@@ -76,10 +76,22 @@ def wait_comfy_ready(api_url: str, timeout_sec: int) -> None:
 def start_comfy_if_needed() -> None:
     api_url = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
     boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "360"))
-    comfy_cmd = os.getenv(
-        "COMFY_START_CMD",
-        "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --disable-dynamic-vram --reserve-vram 8.0",
-    )
+    
+    # Dynamically detect VRAM to apply 4090 survival flags, but leave 5090/A100 uncapped
+    base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188"
+    try:
+        import torch
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if vram_gb <= 25.0:
+            print(f"[entry] Detected {vram_gb:.1f}GB VRAM <= 25GB. Applying 4090 survival flags.")
+            base_cmd += " --disable-dynamic-vram --reserve-vram 8.0"
+        else:
+            print(f"[entry] Detected {vram_gb:.1f}GB VRAM > 25GB. Running uncapped for max performance.")
+    except Exception as e:
+        print(f"[entry] Could not detect VRAM ({e}), defaulting to strict limits.")
+        base_cmd += " --disable-dynamic-vram --reserve-vram 8.0"
+
+    comfy_cmd = os.getenv("COMFY_START_CMD", base_cmd)
 
     try:
         r = requests.get(f"{api_url}/system_stats", timeout=2)
