@@ -161,6 +161,7 @@ type GenerateResponse struct {
 	FinalVideoURLs   []string               `json:"final_video_urls,omitempty"`
 	SegmentVideoURLs []string               `json:"segment_video_urls,omitempty"`
 	IntermediateURLs []string               `json:"intermediate_urls,omitempty"`
+	Error            string                 `json:"error,omitempty"`
 	Meta             map[string]interface{} `json:"meta,omitempty"`
 	Raw              map[string]interface{} `json:"raw,omitempty"`
 }
@@ -430,12 +431,40 @@ func (a *App) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, resp)
 	case "runpod":
-		resp, err := a.generateWithRunPod(r.Context(), req)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if ok {
+			flusher.Flush()
 		}
-		writeJSON(w, http.StatusOK, resp)
+
+		done := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					w.Write([]byte(" "))
+					if ok {
+						flusher.Flush()
+					}
+				}
+			}
+		}()
+
+		res, err := a.generateWithRunPod(r.Context(), req)
+		close(done)
+
+		if err != nil {
+			res = &GenerateResponse{
+				OK:    false,
+				Error: err.Error(),
+			}
+		}
+		json.NewEncoder(w).Encode(res)
 	default:
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "No execution engine configured. Set COMFY_API_URL or RUNPOD_API_KEY/RUNPOD_ENDPOINT_ID.",

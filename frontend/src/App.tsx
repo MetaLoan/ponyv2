@@ -563,7 +563,7 @@ function App() {
         body: JSON.stringify(body),
       });
       const json = (await resp.json()) as GenerateResult;
-      if (!resp.ok) {
+      if (!resp.ok || (json as any).error || (json.ok === false)) {
         throw new Error(String((json as { error?: string }).error ?? "Request failed"));
       }
       if (target === "render") {
