@@ -75,8 +75,8 @@ WAN_VIDEO_FPS = int(os.getenv("WAN_VIDEO_FPS", "16"))
 WAN_VAE_NAME = os.getenv("WAN_VAE_NAME", "wan_2.1_vae.safetensors")
 WAN_CLIP_VISION_NAME = os.getenv("WAN_CLIP_VISION_NAME", "clip_vision_h.safetensors")
 WAN_CLIP_NAME = os.getenv("WAN_CLIP_NAME", "umt5_xxl_fp8_e4m3fn_scaled.safetensors")
-WAN_UNET_HIGH_NAME = os.getenv("WAN_UNET_HIGH_NAME", "wan22I2V8StepsNSFWFP8_fp8Highnoise10.safetensors")
-WAN_UNET_LOW_NAME = os.getenv("WAN_UNET_LOW_NAME", "wan22I2V8StepsNSFWFP8_fp8Lownoise10.safetensors")
+WAN_UNET_HIGH_NAME = os.getenv("WAN_UNET_HIGH_NAME", "WAN2.2-NSFW-FastMove-V2-H.safetensors")
+WAN_UNET_LOW_NAME = os.getenv("WAN_UNET_LOW_NAME", "WAN2.2-NSFW-FastMove-V2-L.safetensors")
 
 
 def _first_env(*names: str, default: str = "") -> str:
