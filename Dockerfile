@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204
 
 ARG GIT_SHA=unknown
 
@@ -8,7 +8,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DEFAULT_TIMEOUT=120 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
-    COMFY_API_URL=http://127.0.0.1:8188
+    COMFY_API_URL=http://127.0.0.1:8188 \
+    TORCH_CUDNN_V8_API_DISABLED=1 \
+    CUDNN_LOGINFO_DBG=0
 
 WORKDIR /workspace/runpod-slim
 
@@ -22,16 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates libgl1 libglib2.0-0 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-# ComfyUI runtime requires torch explicitly in most clean CUDA base images.
-# Pin to CUDA 12.8 Nightly to support Blackwell (sm_120) and RTX 5090
+# We use the custom PyTorch provided by the base image which has sm_120 support compiled in.
 RUN python3 -m pip install -U pip setuptools wheel && \
-    python3 -m pip install --pre \
-      --index-url https://download.pytorch.org/whl/nightly/cu128 \
-      torch torchvision torchaudio && \
-    python3 -m pip install sageattention xformers
+    python3 -m pip install sageattention
 
 # ComfyUI base
 RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git /workspace/runpod-slim/ComfyUI
+# Patched for Blackwell GPU compatibility
+RUN sed -i 's/NVIDIA_MEMORY_CONV_BUG_WORKAROUND = True/NVIDIA_MEMORY_CONV_BUG_WORKAROUND = False/' /workspace/runpod-slim/ComfyUI/comfy/ops.py
 RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 
 # Required custom nodes for V16 workflow

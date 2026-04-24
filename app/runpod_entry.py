@@ -79,7 +79,7 @@ def start_comfy_if_needed() -> None:
     
     # Dynamically detect VRAM. Always disable DynamicVRAM to prevent PyTorch unified memory thrashing.
     # Apply reserve-vram 8.0 only for 24GB cards (4090) to force text encoder out.
-    base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --disable-dynamic-vram"
+    base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --disable-dynamic-vram --disable-cuda-malloc"
     try:
         import torch
         vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
