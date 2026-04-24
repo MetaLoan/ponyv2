@@ -77,19 +77,20 @@ def start_comfy_if_needed() -> None:
     api_url = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
     boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "360"))
     
-    # Dynamically detect VRAM to apply 4090 survival flags, but leave 5090/A100 uncapped
-    base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188"
+    # Dynamically detect VRAM. Always disable DynamicVRAM to prevent PyTorch unified memory thrashing.
+    # Apply reserve-vram 8.0 only for 24GB cards (4090) to force text encoder out.
+    base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --disable-dynamic-vram"
     try:
         import torch
         vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if vram_gb <= 25.0:
             print(f"[entry] Detected {vram_gb:.1f}GB VRAM <= 25GB. Applying 4090 survival flags.")
-            base_cmd += " --disable-dynamic-vram --reserve-vram 8.0"
+            base_cmd += " --reserve-vram 8.0"
         else:
-            print(f"[entry] Detected {vram_gb:.1f}GB VRAM > 25GB. Running uncapped for max performance.")
+            print(f"[entry] Detected {vram_gb:.1f}GB VRAM > 25GB. Running without reserve for max 5090 performance.")
     except Exception as e:
         print(f"[entry] Could not detect VRAM ({e}), defaulting to strict limits.")
-        base_cmd += " --disable-dynamic-vram --reserve-vram 8.0"
+        base_cmd += " --reserve-vram 8.0"
 
     comfy_cmd = os.getenv("COMFY_START_CMD", base_cmd)
 
