@@ -1036,7 +1036,7 @@ function App() {
           <MediaCard
             title="WAN Start Image"
             media={wanStartMedia}
-            onKindChange={(kind) => updateMedia("wanStart", kind)}
+            onKindChange={(kind) => updateMedia("wanStart", { kind })}
             onFileChange={(e) => onFileChange("wanStart", e)}
             onURLChange={(value) => onURLChange("wanStart", value)}
           />
