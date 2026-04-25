@@ -906,7 +906,7 @@ function App() {
     }
   }
 
-  function handleFileRead(key: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", file: File) {
+  function handleFileRead(key: "reference" | "pose" | "qwenExtra" | "wanStart", file: File) {
     if (!file) {
       return;
     }
