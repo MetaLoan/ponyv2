@@ -205,7 +205,12 @@ def _media_to_dashscope_accessible_url(media: str, request_id: str, prefix: str)
     blob, content_type = _decode_media_bytes(media)
     ext = _guess_extension(content_type or "image/png", ".png")
     key = f"dashscope_inputs/{request_id}/{prefix}_{uuid.uuid4().hex}{ext}"
-    return _upload_bytes_to_r2(s3, s3_cfg, key, blob, content_type or "image/png")
+    s3.put_object(Bucket=s3_cfg["bucket"], Key=key, Body=blob, ContentType=content_type or "image/png")
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": s3_cfg["bucket"], "Key": key},
+        ExpiresIn=6 * 60 * 60,
+    )
 
 
 def _write_output_bytes(filename: str, blob: bytes) -> Path:
