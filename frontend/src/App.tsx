@@ -115,7 +115,6 @@ function App() {
   const [poseMedia, setPoseMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [qwenExtraMedia, setQwenExtraMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [wanStartMedia, setWanStartMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
-  const [wanEndMedia, setWanEndMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [prompt, setPrompt] = useState(
     "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，细节清晰，人物自然融入环境，photorealistic, best quality, ultra detailed"
   );
@@ -348,10 +347,6 @@ function App() {
     };
     if (isWanMode) {
       body.startimg = mediaToPayloadValue(wanStartMedia);
-      const wanEndValue = mediaToPayloadValue(wanEndMedia);
-      if (wanEndValue) {
-        body.endimg = wanEndValue;
-      }
       body.frames = frames;
       body.wan_unet_high_name = wanUnetHighName;
       body.wan_unet_low_name = wanUnetLowName;
@@ -451,7 +446,6 @@ function App() {
     qwenSize,
     negativePrompt,
     wanStartMedia,
-    wanEndMedia,
     wanSeeds,
     wanPrompts,
     wanSegmentFrames,
@@ -547,10 +541,6 @@ function App() {
       }
       if (mode === "wan2_2_i2v_extend_any_frame") {
         body.startimg = await resolveMedia(wanStartMedia);
-        const wanEndValue = await resolveOptionalMedia(wanEndMedia);
-        if (wanEndValue) {
-          body.endimg = wanEndValue;
-        }
         body.frames = frames;
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
@@ -632,8 +622,7 @@ function App() {
           : which === "qwenExtra"
             ? setQwenExtraMedia
             : which === "wanStart"
-              ? setWanStartMedia
-              : setWanEndMedia;
+              : setWanStartMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
@@ -678,7 +667,6 @@ function App() {
     );
     setFrames(81);
     setWanStartMedia({ kind: "file", file: null, url: "", preview: "" });
-    setWanEndMedia({ kind: "file", file: null, url: "", preview: "" });
     setWanSeeds([]);
     const wanUnets = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const unetSource = wanUnets.length > 0 ? wanUnets : catalog.unets || [];
@@ -757,9 +745,6 @@ function App() {
       }
       if (typeof source.startimg === "string" || typeof source.startimg === "object") {
         setWanStartMedia(mediaFromImportedValue(source.startimg));
-      }
-      if (typeof source.endimg === "string" || typeof source.endimg === "object") {
-        setWanEndMedia(mediaFromImportedValue(source.endimg));
       }
       if (typeof source.qwen_model === "string") {
         setQwenModel(source.qwen_model);
@@ -1058,14 +1043,6 @@ function App() {
           />
         )}
 
-        {mode === "wan2_2_i2v_extend_any_frame" && (
-          <MediaCard
-            title="WAN End Image (Optional)"
-            media={wanEndMedia}
-            onKindChange={(kind) => updateMedia("wanEnd", { kind })}
-            onFileChange={(e) => onFileChange("wanEnd", e)}
-            onURLChange={(value) => onURLChange("wanEnd", value)}
-          />
         )}
       </aside>
 
@@ -1352,6 +1329,20 @@ function App() {
                   </select>
                 </label>
               )}
+            </section>
+          )}
+
+          {isWanMode && (
+            <section className="card">
+              <h2>Video Generation Params</h2>
+              <div className="inline">
+                <NumberField label="Seed" value={seed} onChange={setSeed} min={0} max={9999999999999999} step={1} />
+                <NumberField label="Steps" value={steps} onChange={setSteps} min={1} max={100} step={1} />
+              </div>
+              <div className="inline">
+                <NumberField label="Base Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={100} step={1} />
+                <NumberField label="CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
+              </div>
             </section>
           )}
 

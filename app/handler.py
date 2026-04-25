@@ -213,6 +213,55 @@ def _media_to_dashscope_accessible_url(media: str, request_id: str, prefix: str)
     )
 
 
+def _dashscope_text_chat(prompt: str, system: str = None, model: str = "qwen-max") -> str:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        return ""
+    url = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    payload = {
+        "model": model,
+        "input": {"messages": []},
+        "parameters": {"result_format": "message"},
+    }
+    if system:
+        payload["input"]["messages"].append({"role": "system", "content": system})
+    payload["input"]["messages"].append({"role": "user", "content": prompt})
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        return resp.json()["output"]["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[dashscope] chat failed: {e}")
+        return ""
+
+
+def _generate_segment_prompts(main_prompt: str, segment_count: int) -> List[str]:
+    if segment_count <= 1:
+        return [main_prompt]
+    system_msg = (
+        "You are a video storyboard assistant. The user is generating a long video by splitting a main action into multiple segments. "
+        "Your goal is to decompose the main prompt into a sequence of detailed sub-actions, one for each segment, to ensure a logical and coherent progression. "
+        "For example, if the main prompt is 'a student putting on shoes', and there are 3 segments: "
+        "Segment 1: 'a student putting on shoes', "
+        "Segment 2: 'the student tying the left shoelace', "
+        "Segment 3: 'the student tying the right shoelace'. "
+        "Output ONLY the segment prompts, one per line. Do not include numbers, labels, or extra text. "
+        "Ensure each segment prompt is descriptive and maintains consistency in characters and environment."
+    )
+    user_msg = f"Main prompt: '{main_prompt}'. Please provide {segment_count} segment prompts."
+    content = _dashscope_text_chat(user_msg, system=system_msg, model="qwen-plus")
+    if not content:
+        return [main_prompt] * segment_count
+    lines = [l.strip() for l in content.strip().splitlines() if l.strip()]
+    if len(lines) < segment_count:
+        return lines + [main_prompt] * (segment_count - len(lines))
+    return lines[:segment_count]
+
+
 def _write_output_bytes(filename: str, blob: bytes) -> Path:
     COMFY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     path = COMFY_OUTPUT_DIR / filename
@@ -1062,6 +1111,7 @@ def _call_dashscope_i2v_extend_any_frame(
     prompt_extend: bool,
     watermark: bool,
     audio_url: str,
+    seed: int,
     last_media: str = "",
 ) -> Tuple[bytes, str]:
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
@@ -1090,6 +1140,7 @@ def _call_dashscope_i2v_extend_any_frame(
             "resolution": resolution_text,
             "prompt_extend": bool(prompt_extend),
             "watermark": bool(watermark),
+            "seed": seed,
         },
     }
     if last_input:
@@ -1346,133 +1397,163 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     if str(data.get("endimg", "")).strip():
         raise RuntimeError("WAN Comfy workflow does not support endimg natively.")
 
-    frames = int(data.get("frames", 81) or 81)
+    total_frames = int(data.get("frames", 81) or 81)
+    segment_limit = 161  # 10 seconds at 16fps
+    segment_count = max(1, (total_frames + segment_limit - 1) // segment_limit)
+
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     negative_prompt = str(data.get("negative_prompt", "")).strip()
-    loras = [x for x in (data.get("loras") or []) if isinstance(x, dict) and str(x.get("name", "")).strip()]
+    auto_prompts = bool(data.get("auto_generate_segment_prompts", False))
+    segment_prompts = (
+        _generate_segment_prompts(prompt_text, segment_count)
+        if auto_prompts
+        else [prompt_text] * segment_count
+    )
 
-    prompt = load_json(WAN_WORKFLOW_API_PATH)
-    
-    current_start = str(data.get("startimg", "")).strip()
-    start_image_filename = resolve_media_to_comfy_filename(current_start, f"wan_start_{request_id}")
-    
-    data_copy = dict(data)
-    data_copy["seed"] = int(data.get("seed", 0) or 0)
-    _apply_wan_workflow_defaults(prompt, data_copy, start_image_filename, frames, 1)
+    loras = [
+        x
+        for x in (data.get("loras") or [])
+        if isinstance(x, dict) and str(x.get("name", "")).strip()
+    ]
 
-    if "6" in prompt:
-        prompt["6"]["inputs"]["text"] = prompt_text
-    if "7" in prompt:
-        prompt["7"]["inputs"]["text"] = negative_prompt
+    segment_video_paths = []
+    current_start_media = str(data.get("startimg", "")).strip()
 
-    # LORA LOGIC (Replicating okbox-comfy multi-lora high/low splitting)
-    registry_path = Path("/runpod-volume/my_stable_models/lora_style_registry.json")
-    registry = {}
-    if registry_path.exists():
-        try:
-            registry = json.loads(registry_path.read_text(encoding='utf-8'))
-        except Exception:
-            pass
+    for idx in range(segment_count):
+        segment_idx = idx + 1
+        current_prompt_text = segment_prompts[idx]
+        segment_frames = min(segment_limit, total_frames - (idx * segment_limit))
+        if segment_frames <= 0:
+            break
 
-    if loras:
-        # Check if the requested lora is a style key in registry
-        style_name = loras[0]["name"]
-        
-        if "150" in prompt:
-            prompt.pop("150", None)
-        if "151" in prompt:
-            prompt.pop("151", None)
-            
-        next_node_id = 200
-        prev_high_ref = ["37", 0]
-        prev_low_ref = ["100", 0]
-        
-        for lora in loras:
-            name = lora["name"]
-            high_file = name
-            low_file = name
-            
-            if name in registry:
-                high_file = registry[name].get("high", "none")
-                low_file = registry[name].get("low", "none")
-            
-            strength = float(lora.get("strength_model", lora.get("strength", 1.0) or 1.0))
-            
-            if high_file != "none":
-                node_id_h = str(next_node_id)
-                next_node_id += 1
-                prompt[node_id_h] = {
-                    "inputs": {"lora_name": high_file, "strength_model": strength, "model": prev_high_ref},
-                    "class_type": "LoraLoaderModelOnly"
-                }
-                prev_high_ref = [node_id_h, 0]
-                
-            if low_file != "none":
-                node_id_l = str(next_node_id)
-                next_node_id += 1
-                prompt[node_id_l] = {
-                    "inputs": {"lora_name": low_file, "strength_model": strength, "model": prev_low_ref},
-                    "class_type": "LoraLoaderModelOnly"
-                }
-                prev_low_ref = [node_id_l, 0]
+        prompt = load_json(WAN_WORKFLOW_API_PATH)
+        start_image_filename = resolve_media_to_comfy_filename(
+            current_start_media, f"wan_start_{request_id}_{segment_idx}"
+        )
 
-        if "54" in prompt:
-            prompt["54"]["inputs"]["model"] = prev_high_ref
-        if "101" in prompt:
-            prompt["101"]["inputs"]["model"] = prev_low_ref
-    else:
-        if "150" in prompt: prompt.pop("150", None)
-        if "151" in prompt: prompt.pop("151", None)
-        if "54" in prompt: prompt["54"]["inputs"]["model"] = ["37", 0]
-        if "101" in prompt: prompt["101"]["inputs"]["model"] = ["100", 0]
+        data_copy = dict(data)
+        data_copy["seed"] = int(data.get("seed", 0) or 0) + idx
+        _apply_wan_workflow_defaults(
+            prompt, data_copy, start_image_filename, segment_frames, segment_idx
+        )
 
-    validate_required_node_types(prompt)
-    prompt_id = queue_prompt(prompt)
-    history_obj = wait_history(prompt_id, event=event)
+        if "6" in prompt:
+            prompt["6"]["inputs"]["text"] = current_prompt_text
+        if "7" in prompt:
+            prompt["7"]["inputs"]["text"] = negative_prompt
 
-    # Collect outputs just like okbox-comfy
-    image_files = []
-    outputs = history_obj.get("outputs", {})
-    for nid, nout in outputs.items():
-        if "images" in nout:
-            for img_info in nout["images"]:
-                fname = img_info.get("filename", "")
-                subfolder = img_info.get("subfolder", "")
-                filepath = COMFY_OUTPUT_DIR / subfolder / fname
-                if filepath.exists():
-                    image_files.append(filepath)
+        # LORA LOGIC (Replicating okbox-comfy multi-lora high/low splitting)
+        registry_path = Path("/runpod-volume/my_stable_models/lora_style_registry.json")
+        registry = {}
+        if registry_path.exists():
+            try:
+                registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
 
-    if not image_files:
-        raise RuntimeError("No output frames generated.")
-        
-    image_files.sort()
-    
-    # Merge with ffmpeg identically to okbox-comfy
+        if loras:
+            next_node_id = 200
+            prev_high_ref = ["37", 0]
+            prev_low_ref = ["100", 0]
+            for lora in loras:
+                name = lora["name"]
+                high_file = name
+                low_file = name
+                if name in registry:
+                    high_file = registry[name].get("high", "none")
+                    low_file = registry[name].get("low", "none")
+                strength = float(lora.get("strength_model", lora.get("strength", 1.0) or 1.0))
+                if high_file != "none":
+                    node_id_h = str(next_node_id)
+                    next_node_id += 1
+                    prompt[node_id_h] = {
+                        "inputs": {
+                            "lora_name": high_file,
+                            "strength_model": strength,
+                            "model": prev_high_ref,
+                        },
+                        "class_type": "LoraLoaderModelOnly",
+                    }
+                    prev_high_ref = [node_id_h, 0]
+                if low_file != "none":
+                    node_id_l = str(next_node_id)
+                    next_node_id += 1
+                    prompt[node_id_l] = {
+                        "inputs": {
+                            "lora_name": low_file,
+                            "strength_model": strength,
+                            "model": prev_low_ref,
+                        },
+                        "class_type": "LoraLoaderModelOnly",
+                    }
+                    prev_low_ref = [node_id_l, 0]
+            if "54" in prompt:
+                prompt["54"]["inputs"]["model"] = prev_high_ref
+            if "101" in prompt:
+                prompt["101"]["inputs"]["model"] = prev_low_ref
+        else:
+            if "150" in prompt:
+                prompt.pop("150", None)
+            if "151" in prompt:
+                prompt.pop("151", None)
+            if "54" in prompt:
+                prompt["54"]["inputs"]["model"] = ["37", 0]
+            if "101" in prompt:
+                prompt["101"]["inputs"]["model"] = ["100", 0]
+
+        validate_required_node_types(prompt)
+        prompt_id = queue_prompt(prompt)
+        history_obj = wait_history(prompt_id, event=event)
+
+        image_files = []
+        outputs = history_obj.get("outputs", {})
+        for nid, nout in outputs.items():
+            if "images" in nout:
+                for img_info in nout["images"]:
+                    fname = img_info.get("filename", "")
+                    subfolder = img_info.get("subfolder", "")
+                    filepath = COMFY_OUTPUT_DIR / subfolder / fname
+                    if filepath.exists():
+                        image_files.append(filepath)
+
+        if not image_files:
+            raise RuntimeError(f"Segment {segment_idx} generated no frames.")
+
+        image_files.sort()
+        segment_filename = f"wan_{request_id}_seg_{segment_idx:02d}.mp4"
+        segment_path = COMFY_OUTPUT_DIR / segment_filename
+
+        if len(image_files) == 1:
+            cmd = [
+                "ffmpeg", "-y", "-loop", "1", "-i", str(image_files[0]),
+                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", str(segment_path),
+            ]
+        else:
+            list_file = COMFY_OUTPUT_DIR / f"frames_{request_id}_{segment_idx}.txt"
+            with list_file.open("w") as lf:
+                for img_path in image_files:
+                    lf.write(f"file '{img_path}'\n")
+                    lf.write(f"duration {1.0/WAN_VIDEO_FPS}\n")
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", str(list_file),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", str(segment_path),
+            ]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        segment_video_paths.append(segment_path)
+
+        # Extract last frame for next segment start
+        last_frame_bytes = image_files[-1].read_bytes()
+        current_start_media, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
+
+    if not segment_video_paths:
+        raise RuntimeError("No segments were successfully generated.")
+
     merged_filename = f"wan_{request_id}_merged.mp4"
     merged_path = COMFY_OUTPUT_DIR / merged_filename
-    
-    if len(image_files) == 1:
-        cmd = [
-            "ffmpeg", "-y", "-loop", "1", "-i", str(image_files[0]),
-            "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", str(merged_path)
-        ]
-    else:
-        list_file = COMFY_OUTPUT_DIR / f"frames_{request_id}.txt"
-        with list_file.open("w") as lf:
-            for img_path in image_files:
-                lf.write(f"file '{img_path}'\n")
-                lf.write(f"duration {1.0/16}\n")
-        cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(list_file),
-            "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", str(merged_path)
-        ]
-
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg error: {proc.stderr.decode('utf-8', errors='ignore')[:4000]}")
+    _concat_video_segments(segment_video_paths, merged_path)
 
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
@@ -1482,7 +1563,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             "request_id": request_id,
             "warning": "R2 env vars missing; returning local filenames only",
             "final_video_local_file": merged_filename,
-            "final_video_local_files": [merged_filename]
+            "final_video_local_files": [merged_filename],
         }
 
     merged_raw = merged_path.read_bytes()
@@ -1502,7 +1583,8 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         "final_video_urls": [merged_url],
         "meta": {
             "mode": WAN_EXTEND_ANY_FRAME_MODE,
-            "frames": frames,
+            "frames": total_frames,
+            "segment_count": segment_count,
             "prompt": prompt_text,
             "backend": "comfy",
             "workflow": str(WAN_WORKFLOW_API_PATH),
@@ -1565,22 +1647,32 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
     audio_url = str(data.get("i2v_audio_url", "")).strip()
     frames = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
     segment_count = max(1, (frames + WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT - 1) // WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
+    seed = int(data.get("seed", 0) or 0)
+
+    auto_prompts = bool(data.get("auto_generate_segment_prompts", False))
+    segment_prompts = (
+        _generate_segment_prompts(prompt_text, segment_count)
+        if auto_prompts
+        else [prompt_text] * segment_count
+    )
 
     segment_paths: List[Path] = []
     segment_records: List[Dict] = []
     current_start = start_media
 
     for index in range(segment_count):
+        current_prompt = segment_prompts[index]
         current_end = end_media if index == segment_count - 1 and end_media else ""
         video_raw, video_content_type = _call_dashscope_i2v_extend_any_frame(
             current_start,
-            prompt_text,
+            current_prompt,
             negative_prompt,
             WAN_EXTEND_ANY_FRAME_MODEL,
             resolution,
             prompt_extend,
             watermark,
             audio_url,
+            seed + index,
             current_end,
         )
         segment_filename = f"wan_extend_{request_id}_{index + 1:02d}.mp4"
