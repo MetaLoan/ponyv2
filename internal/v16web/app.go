@@ -259,6 +259,7 @@ func (a *App) routes() {
 	a.router.HandleFunc("/api/generate", a.handleGenerate)
 	a.router.HandleFunc("/api/status", a.handleStatus)
 	a.router.HandleFunc("/api/comfy/view", a.handleComfyView)
+	a.router.HandleFunc("/api/ai/split_prompt", a.handleAiSplitPrompt)
 
 	fs := http.FileServer(http.Dir(a.Config.FrontendDist))
 	a.router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -500,6 +501,82 @@ func (a *App) handleComfyView(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
+
+func (a *App) handleAiSplitPrompt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Prompt   string `json:"prompt"`
+		Segments int    `json:"segments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	if apiKey == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "DASHSCOPE_API_KEY not set in web environment"})
+		return
+	}
+
+	systemMsg := "You are a video storyboard assistant. The user is generating a long video by splitting a main action into multiple segments. Decompose the main prompt into a sequence of detailed sub-actions, one for each segment. Output ONLY the prompts, one per line."
+	userMsg := fmt.Sprintf("Main prompt: '%s'. Please provide %d segment prompts.", req.Prompt, req.Segments)
+
+	payload := map[string]interface{}{
+		"model": "qwen-plus",
+		"input": map[string]interface{}{
+			"messages": []map[string]string{
+				{"role": "system", "content": systemMsg},
+				{"role": "user", "content": userMsg},
+			},
+		},
+		"parameters": map[string]interface{}{
+			"result_format": "message",
+		},
+	}
+
+	jsonPayload, _ := json.Marshal(payload)
+	httpReq, _ := http.NewRequestWithContext(r.Context(), "POST", "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation", bytes.NewBuffer(jsonPayload))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := a.httpClient.Do(httpReq)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	var dashscopeResp struct {
+		Output struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		} `json:"output"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&dashscopeResp); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to parse dashscope response"})
+		return
+	}
+
+	if len(dashscopeResp.Output.Choices) == 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "empty response from AI"})
+		return
+	}
+
+	content := dashscopeResp.Output.Choices[0].Message.Content
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	var prompts []string
+	for _, l := range lines {
+		if t := strings.TrimSpace(l); t != "" {
+			prompts = append(prompts, t)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"prompts": prompts})
+}
+
 
 func (a *App) engine() string {
 	if a.Config.ComfyAPIURL != "" {
