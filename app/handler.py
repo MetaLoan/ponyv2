@@ -1461,10 +1461,8 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         list_file = COMFY_OUTPUT_DIR / f"frames_{request_id}.txt"
         with list_file.open("w") as lf:
             for img_path in image_files:
-                lf.write(f"file '{img_path}'
-")
-                lf.write(f"duration {1.0/16}
-")
+                lf.write(f"file '{img_path}'\\n")
+                lf.write(f"duration {1.0/16}\\n")
         cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", str(list_file),
