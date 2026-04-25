@@ -613,7 +613,7 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", patch: Partial<MediaState>) {
+  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart", patch: Partial<MediaState>) {
     const setter =
       which === "reference"
         ? setReferenceMedia
@@ -621,12 +621,11 @@ function App() {
           ? setPoseMedia
           : which === "qwenExtra"
             ? setQwenExtraMedia
-            : which === "wanStart"
-              : setWanStartMedia;
+            : setWanStartMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -636,7 +635,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanEnd", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -1037,13 +1036,12 @@ function App() {
           <MediaCard
             title="WAN Start Image"
             media={wanStartMedia}
-            onKindChange={(kind) => updateMedia("wanStart", { kind })}
+            onKindChange={(kind) => updateMedia("wanStart", kind)}
             onFileChange={(e) => onFileChange("wanStart", e)}
             onURLChange={(value) => onURLChange("wanStart", value)}
           />
         )}
 
-        )}
       </aside>
 
       <main className="main">
