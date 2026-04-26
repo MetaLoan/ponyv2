@@ -476,11 +476,6 @@ func (a *App) handleGenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleComfyView(w http.ResponseWriter, r *http.Request) {
-	nodeID := r.URL.Query().Get("node_id")
-	filename := r.URL.Query().Get("filename")
-	subfolder := r.URL.Query().Get("subfolder")
-	mtype := r.URL.Query().Get("type")
-
 	if a.Config.ComfyAPIURL == "" {
 		http.Error(w, "COMFY_API_URL not configured", http.StatusBadRequest)
 		return
