@@ -1270,20 +1270,7 @@ function App() {
                     <NumberField label="High Noise CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
                     <NumberField label="Low Noise CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
                   </div>
-                  <div className="inline">
-                    <label>
-                      WAN Resolution
-                      <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
-                        <option value="720P">720P (Default)</option>
-                        <option value="480*832">480*832 (9:16 Portrait)</option>
-                        <option value="832*480">832*480 (16:9 Landscape)</option>
-                        <option value="720*1280">720*1280 (9:16 Portrait)</option>
-                        <option value="1280*720">1280*720 (16:9 Landscape)</option>
-                        <option value="1080*1920">1080*1920 (9:16 Portrait)</option>
-                        <option value="1920*1080">1920*1080 (16:9 Landscape)</option>
-                      </select>
-                    </label>
-                  </div>
+
                 </div>
               </details>
             </section>
