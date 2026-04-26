@@ -368,7 +368,7 @@ function App() {
       body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
       if (enableWanFaceSwap) {
         body.wan_face_swap = true;
-        body.face_image = await resolveMedia(wanFaceMedia);
+        body.face_image = mediaToPayloadValue(wanFaceMedia);
         body.wan_face_swap_prompt = wanFaceSwapPrompt;
       }
     } else {
@@ -556,7 +556,9 @@ function App() {
       }
       if (mode === "wan2_2_i2v_extend_any_frame") {
         body.startimg = await resolveMedia(wanStartMedia);
-        body.frames = frames;
+        if (enableWanFaceSwap) {
+          body.face_image = await resolveMedia(wanFaceMedia);
+        }
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
         body.pose_image = await resolveMedia(poseMedia);
