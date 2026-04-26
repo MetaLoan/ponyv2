@@ -500,6 +500,10 @@ function App() {
     qwenExtraMedia,
     enableLora,
     loras,
+    autoSegmentPrompts,
+    wanVaeName,
+    wanClipVisionName,
+    wanClipName,
   ]);
 
   const modeSummary = {
