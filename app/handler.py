@@ -586,13 +586,16 @@ def normalize_input(input_data: Dict) -> Dict:
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
         data["enable_pulid"] = False
         data["enable_i2v"] = False
-    if "enable_lora" not in data:
-        data["enable_lora"] = bool(data.get("loras"))
-    if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
         data["prompt"] = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
         data["frames"] = int(data.get("frames", WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT) or WAN_EXTEND_ANY_FRAME_SEGMENT_LIMIT)
         data.setdefault("width", WAN_DEFAULT_WIDTH)
         data.setdefault("height", WAN_DEFAULT_HEIGHT)
+        data.setdefault("base_steps", 4)
+        data.setdefault("steps", 4)
+        data.setdefault("base_cfg", 2.0)
+        data.setdefault("cfg", 1.0)
+    if "enable_lora" not in data:
+        data["enable_lora"] = bool(data.get("loras"))
     return data
 
 
