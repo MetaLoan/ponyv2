@@ -1434,6 +1434,16 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     segment_video_paths = []
     current_start_media = str(data.get("startimg", "")).strip()
 
+    if bool(data.get("wan_face_swap", False)):
+        face_image = str(data.get("face_image", "")).strip()
+        swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
+        if face_image:
+            # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
+            swapped_bytes, _ = _call_dashscope_qwen_face_swap(
+                current_start_media, face_image, swap_prompt
+            )
+            current_start_media, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
+
     for idx in range(segment_count):
         segment_idx = idx + 1
         current_prompt_text = segment_prompts[idx]
@@ -1674,6 +1684,16 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
     segment_paths: List[Path] = []
     segment_records: List[Dict] = []
     current_start = start_media
+
+    if bool(data.get("wan_face_swap", False)):
+        face_image = str(data.get("face_image", "")).strip()
+        swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
+        if face_image:
+            # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
+            swapped_bytes, _ = _call_dashscope_qwen_face_swap(
+                current_start, face_image, swap_prompt
+            )
+            current_start, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
 
     for index in range(segment_count):
         current_prompt = segment_prompts[index]

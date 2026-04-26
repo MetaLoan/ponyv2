@@ -172,6 +172,9 @@ function App() {
     "保持主体一致，生成自然流畅、镜头稳定、画面连贯的动态视频，动作真实，细节清晰，电影感自然。"
   );
   const [i2vModel, setI2VModel] = useState("wan2.7-i2v");
+  const [wanFaceMedia, setWanFaceMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [enableWanFaceSwap, setEnableWanFaceSwap] = useState(false);
+  const [wanFaceSwapPrompt, setWanFaceSwapPrompt] = useState(DEFAULT_QWEN_SWAP_PROMPT);
   const [i2vResolution, setI2VResolution] = useState("720P");
   const [i2vDuration, setI2VDuration] = useState(5);
   const [i2vSeed, setI2VSeed] = useState<number>(12345);
@@ -363,6 +366,11 @@ function App() {
       const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
       body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
       body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
+      if (enableWanFaceSwap) {
+        body.wan_face_swap = true;
+        body.face_image = await resolveMedia(wanFaceMedia);
+        body.wan_face_swap_prompt = wanFaceSwapPrompt;
+      }
     } else {
       body.width = width;
       body.height = height;
@@ -453,6 +461,9 @@ function App() {
     wanUnetHighName,
     wanUnetLowName,
     qwenExtraMedia,
+    wanFaceMedia,
+    enableWanFaceSwap,
+    wanFaceSwapPrompt,
     i2vResolution,
     i2vAudioURL,
     i2vPromptExtend,
@@ -617,7 +628,7 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart", patch: Partial<MediaState>) {
+  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", patch: Partial<MediaState>) {
     const setter =
       which === "reference"
         ? setReferenceMedia
@@ -625,11 +636,13 @@ function App() {
           ? setPoseMedia
           : which === "qwenExtra"
             ? setQwenExtraMedia
-            : setWanStartMedia;
+            : which === "wanStart"
+              ? setWanStartMedia
+              : setWanFaceMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -639,7 +652,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -1037,13 +1050,36 @@ function App() {
         )}
 
         {mode === "wan2_2_i2v_extend_any_frame" && (
-          <MediaCard
-            title="WAN Start Image"
-            media={wanStartMedia}
-            onKindChange={(kind) => updateMedia("wanStart", { kind })}
-            onFileChange={(e) => onFileChange("wanStart", e)}
-            onURLChange={(value) => onURLChange("wanStart", value)}
-          />
+          <div className="stack">
+            <MediaCard
+              title="WAN Start Image (图1: 底图)"
+              media={wanStartMedia}
+              onKindChange={(kind) => updateMedia("wanStart", { kind })}
+              onFileChange={(e) => onFileChange("wanStart", e)}
+              onURLChange={(value) => onURLChange("wanStart", value)}
+            />
+            <div className="subcard" style={{ marginTop: "0.5rem" }}>
+              <label className="toggle">
+                <input type="checkbox" checked={enableWanFaceSwap} onChange={(e) => setEnableWanFaceSwap(e.target.checked)} />
+                Pre-Swap Face (Qwen)
+              </label>
+              {enableWanFaceSwap && (
+                <div className="stack" style={{ marginTop: "0.5rem" }}>
+                  <MediaCard
+                    title="Face Image (图2: 脸部)"
+                    media={wanFaceMedia}
+                    onKindChange={(kind) => updateMedia("wanFace", { kind })}
+                    onFileChange={(e) => onFileChange("wanFace", e)}
+                    onURLChange={(value) => onURLChange("wanFace", value)}
+                  />
+                  <label style={{ fontSize: "0.8rem", marginTop: "0.5rem" }}>
+                    Swap Prompt
+                    <textarea rows={3} value={wanFaceSwapPrompt} onChange={(e) => setWanFaceSwapPrompt(e.target.value)} style={{ fontSize: "0.75rem" }} />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
       </aside>
