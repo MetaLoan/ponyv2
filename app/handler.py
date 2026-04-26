@@ -918,6 +918,63 @@ def _resolve_qwen_edit_prompt(template: str, prompt_text: str) -> str:
     return source
 
 
+def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str) -> Tuple[bytes, str]:
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("DASHSCOPE_API_KEY is required for qwen face swap")
+
+    # 图1 为底图 (base_media), 图2 为脸部 (face_media)
+    base_input, _ = _media_to_qwen_data_url(base_media)
+    face_input, _ = _media_to_qwen_data_url(face_media)
+
+    payload = {
+        "model": QWEN_MODEL,
+        "input": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": base_input},
+                        {"image": face_input},
+                        {"text": prompt}
+                    ]
+                }
+            ]
+        },
+        "parameters": {
+            "result_format": "message"
+        }
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    resp = requests.post(QWEN_API_URL, json=payload, headers=headers, timeout=300)
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Qwen face swap failed: {resp.text}")
+
+    res_data = resp.json()
+    choices = res_data.get("output", {}).get("choices", [])
+    if not choices:
+        raise RuntimeError(f"Qwen face swap returned no choices: {json.dumps(res_data)}")
+    
+    content = choices[0].get("message", {}).get("content", [])
+    output_url = ""
+    for item in content:
+        if "image" in item:
+            output_url = item["image"]
+            break
+            
+    if not output_url:
+        raise RuntimeError(f"Qwen face swap returned no image in content: {json.dumps(res_data)}")
+
+    img_resp = requests.get(output_url, timeout=120)
+    img_resp.raise_for_status()
+    return img_resp.content, img_resp.headers.get("content-type", "image/png")
+
+
 def _call_qwen_face_swap(
     reference_media: str,
     base_image_bytes: bytes,
