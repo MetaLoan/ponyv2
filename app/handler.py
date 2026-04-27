@@ -1502,13 +1502,26 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
             input_path = COMFY_INPUT_DIR / current_start_image
             with Image.open(input_path) as img:
                 img_w, img_h = img.size
-            is_landscape = img_w > img_h
+            
+            # Determine aspect ratio (Square if within 10% tolerance)
+            is_square = abs(img_w - img_h) / max(img_w, img_h) <= 0.1
+            is_landscape = img_w > img_h and not is_square
+            
             if res_str == "1080P":
-                width, height = (1920, 1088) if is_landscape else (1088, 1920)
+                if is_square:
+                    width, height = (1440, 1440)
+                else:
+                    width, height = (1920, 1088) if is_landscape else (1088, 1920)
             elif res_str == "720P":
-                width, height = (1280, 720) if is_landscape else (720, 1280)
+                if is_square:
+                    width, height = (960, 960)
+                else:
+                    width, height = (1280, 720) if is_landscape else (720, 1280)
             else:
-                width, height = (832, 480) if is_landscape else (480, 832)
+                if is_square:
+                    width, height = (624, 624)
+                else:
+                    width, height = (832, 480) if is_landscape else (480, 832)
         except Exception:
             width = int(data.get("width", WAN_DEFAULT_WIDTH))
             height = int(data.get("height", WAN_DEFAULT_HEIGHT))

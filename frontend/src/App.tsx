@@ -1150,13 +1150,9 @@ function App() {
                       <option value="same_as_video">和原视频一致</option>
                     ) : (
                       <>
-                        <option value="720P">720P (Default)</option>
-                        <option value="480*832">480*832 (9:16 Portrait)</option>
-                        <option value="832*480">832*480 (16:9 Landscape)</option>
-                        <option value="720*1280">720*1280 (9:16 Portrait)</option>
-                        <option value="1280*720">1280*720 (16:9 Landscape)</option>
-                        <option value="1080*1920">1080*1920 (9:16 Portrait)</option>
-                        <option value="1920*1080">1920*1080 (16:9 Landscape)</option>
+                        <option value="480P">480P (Standard)</option>
+                        <option value="720P">720P (High Quality)</option>
+                        <option value="1080P">1080P (Ultra HD)</option>
                       </>
                     )}
                   </select>
