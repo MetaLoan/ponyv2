@@ -176,6 +176,7 @@ function App() {
   const [enableWanFaceSwap, setEnableWanFaceSwap] = useState(false);
   const [wanFaceSwapPrompt, setWanFaceSwapPrompt] = useState(DEFAULT_QWEN_SWAP_PROMPT);
   const [wanStartVideoMedia, setWanStartVideoMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [wanInputType, setWanInputType] = useState<"image" | "video">("image");
   const [i2vResolution, setI2VResolution] = useState("720P");
   const [i2vDuration, setI2VDuration] = useState(5);
   const [i2vSeed, setI2VSeed] = useState<number>(12345);
@@ -350,7 +351,11 @@ function App() {
       async: true
     };
     if (isWanMode) {
-      body.startimg = mediaToPayloadValue(wanStartMedia);
+      if (wanInputType === "image") {
+        body.startimg = mediaToPayloadValue(wanStartMedia);
+      } else {
+        body.startvideo = mediaToPayloadValue(wanStartVideoMedia);
+      }
       body.frames = frames;
       body.wan_unet_high_name = wanUnetHighName;
       body.wan_unet_low_name = wanUnetLowName;
@@ -371,10 +376,6 @@ function App() {
         body.wan_face_swap = true;
         body.face_image = mediaToPayloadValue(wanFaceMedia);
         body.wan_face_swap_prompt = wanFaceSwapPrompt;
-      }
-      const startVideoVal = mediaToPayloadValue(wanStartVideoMedia);
-      if (startVideoVal) {
-        body.startvideo = startVideoVal;
       }
     } else {
       body.width = width;
@@ -470,6 +471,7 @@ function App() {
     enableWanFaceSwap,
     wanFaceSwapPrompt,
     wanStartVideoMedia,
+    wanInputType,
     i2vResolution,
     i2vAudioURL,
     i2vPromptExtend,
@@ -561,13 +563,13 @@ function App() {
         body.pose_image = await resolveMedia(poseMedia);
       }
       if (mode === "wan2_2_i2v_extend_any_frame") {
-        body.startimg = await resolveMedia(wanStartMedia);
+        if (wanInputType === "image") {
+          body.startimg = await resolveMedia(wanStartMedia);
+        } else {
+          body.startvideo = await resolveMedia(wanStartVideoMedia);
+        }
         if (enableWanFaceSwap) {
           body.face_image = await resolveMedia(wanFaceMedia);
-        }
-        const resolvedStartVideo = await resolveMedia(wanStartVideoMedia);
-        if (resolvedStartVideo) {
-          body.startvideo = resolvedStartVideo;
         }
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
@@ -1065,21 +1067,37 @@ function App() {
 
         {mode === "wan2_2_i2v_extend_any_frame" && (
           <div className="stack">
-            <MediaCard
-              title="WAN Start Image (图1: 底图)"
-              media={wanStartMedia}
-              onKindChange={(kind) => updateMedia("wanStart", { kind })}
-              onFileChange={(e) => onFileChange("wanStart", e)}
-              onURLChange={(value) => onURLChange("wanStart", value)}
-            />
-            <MediaCard
-              title="WAN Start Video (可选: 续写视频)"
-              media={wanStartVideoMedia}
-              onKindChange={(kind) => updateMedia("wanStartVideo", { kind })}
-              onFileChange={(e) => onFileChange("wanStartVideo", e)}
-              onURLChange={(value) => onURLChange("wanStartVideo", value)}
-              accept="video/*"
-            />
+            <section className="card">
+              <h2>输入类型</h2>
+              <div className="inline">
+                <label className="toggle">
+                  <input type="radio" checked={wanInputType === "image"} onChange={() => setWanInputType("image")} />
+                  图片起始 (Start Image)
+                </label>
+                <label className="toggle">
+                  <input type="radio" checked={wanInputType === "video"} onChange={() => setWanInputType("video")} />
+                  视频续写 (Start Video)
+                </label>
+              </div>
+            </section>
+            {wanInputType === "image" ? (
+              <MediaCard
+                title="WAN Start Image (图1: 底图)"
+                media={wanStartMedia}
+                onKindChange={(kind) => updateMedia("wanStart", { kind })}
+                onFileChange={(e) => onFileChange("wanStart", e)}
+                onURLChange={(value) => onURLChange("wanStart", value)}
+              />
+            ) : (
+              <MediaCard
+                title="WAN Start Video (续写视频)"
+                media={wanStartVideoMedia}
+                onKindChange={(kind) => updateMedia("wanStartVideo", { kind })}
+                onFileChange={(e) => onFileChange("wanStartVideo", e)}
+                onURLChange={(value) => onURLChange("wanStartVideo", value)}
+                accept="video/*"
+              />
+            )}
             <div className="subcard" style={{ marginTop: "0.5rem" }}>
               <label className="toggle">
                 <input type="checkbox" checked={enableWanFaceSwap} onChange={(e) => setEnableWanFaceSwap(e.target.checked)} />
