@@ -1499,6 +1499,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     ]
 
     segment_video_paths = []
+    intermediate_urls: List[str] = []
     current_start_media = str(data.get("startimg", "")).strip()
 
     print(f"[DEBUG-COMFY] Starting comfy processing. wan_face_swap={data.get('wan_face_swap')}", flush=True)
@@ -1689,6 +1690,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         "request_id": request_id,
         "final_video_url": merged_url,
         "final_video_urls": [merged_url],
+        "intermediate_urls": intermediate_urls,
         "meta": {
             "mode": WAN_EXTEND_ANY_FRAME_MODE,
             "frames": total_frames,
