@@ -1494,14 +1494,14 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     if bool(data.get("wan_face_swap", False)):
         face_image = str(data.get("face_image", "")).strip()
         swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
-        print(f"[DEBUG-COMFY] WAN Face Swap enabled. Face image present: {bool(face_image)}")
+        print(f"[DEBUG-COMFY] WAN Face Swap enabled. Face image present: {bool(face_image)}", flush=True)
         if face_image:
             # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
-            print(f"[DEBUG-COMFY] Calling Qwen face swap. Base image: {current_start_media[:100]}..., Face image: {face_image[:100]}...")
+            print(f"[DEBUG-COMFY] Calling Qwen face swap. Base image: {current_start_media[:100]}..., Face image: {face_image[:100]}...", flush=True)
             swapped_bytes, _ = _call_dashscope_qwen_face_swap(
                 current_start_media, face_image, swap_prompt
             )
-            print(f"[DEBUG-COMFY] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}")
+            print(f"[DEBUG-COMFY] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
             current_start_media, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
 
     for idx in range(segment_count):
@@ -1748,14 +1748,14 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
     if bool(data.get("wan_face_swap", False)):
         face_image = str(data.get("face_image", "")).strip()
         swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
-        print(f"[DEBUG] WAN Face Swap enabled. Face image present: {bool(face_image)}")
+        print(f"[DEBUG] WAN Face Swap enabled. Face image present: {bool(face_image)}", flush=True)
         if face_image:
             # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
-            print(f"[DEBUG] Calling Qwen face swap. Base image: {current_start[:100]}..., Face image: {face_image[:100]}...")
+            print(f"[DEBUG] Calling Qwen face swap. Base image: {current_start[:100]}..., Face image: {face_image[:100]}...", flush=True)
             swapped_bytes, _ = _call_dashscope_qwen_face_swap(
                 current_start, face_image, swap_prompt
             )
-            print(f"[DEBUG] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}")
+            print(f"[DEBUG] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
             current_start, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
 
     for index in range(segment_count):
@@ -1871,10 +1871,12 @@ def _summarize_history(history_obj: Dict) -> Dict:
 def handler(event: Dict) -> Dict:
     _load_key_env_file()
     data = normalize_input(event.get("input", {}) if isinstance(event, dict) else {})
+    print(f"[DEBUG] Handler received mode: {data.get('mode')}", flush=True)
     request_id = data.get("request_id") or uuid.uuid4().hex
     data["request_id"] = request_id
     validate_input(data)
 
+    print(f"[DEBUG] Mode comparison: {data['mode']} == {WAN_EXTEND_ANY_FRAME_MODE}?", flush=True)
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
         if _wan_use_comfy_backend(data):
             try:
