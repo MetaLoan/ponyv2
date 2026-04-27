@@ -949,6 +949,7 @@ def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
+        "X-DashScope-DataInspection": '{"input":"disable", "output":"disable"}',
     }
 
     resp = requests.post(QWEN_API_URL, json=payload, headers=headers, timeout=300)
@@ -1498,21 +1499,24 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
         print(f"[DEBUG-COMFY] WAN Face Swap enabled. Face image present: {bool(face_image)}", flush=True)
         if face_image:
-            # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
-            print(f"[DEBUG-COMFY] Calling Qwen face swap. Base image: {current_start_media[:100]}..., Face image: {face_image[:100]}...", flush=True)
-            swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
-                current_start_media, face_image, swap_prompt
-            )
-            print(f"[DEBUG-COMFY] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
-            current_start_media, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
-            
-            # 同时也上传到 S3 方便前端展示验证
-            s3, s3_cfg = get_r2_client_and_config()
-            if s3:
-                swapped_key = f"intermediate/{request_id}/swapped_start.png"
-                swapped_url = upload_bytes_to_r2(s3, s3_cfg, swapped_key, swapped_bytes, swapped_ct or "image/png")
-                intermediate_urls.append(swapped_url)
-                print(f"[DEBUG-COMFY] Swapped image uploaded to: {swapped_url}", flush=True)
+            try:
+                # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
+                print(f"[DEBUG-COMFY] Calling Qwen face swap. Base image: {current_start_media[:100]}..., Face image: {face_image[:100]}...", flush=True)
+                swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
+                    current_start_media, face_image, swap_prompt
+                )
+                print(f"[DEBUG-COMFY] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
+                current_start_media, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
+                
+                # 同时也上传到 S3 方便前端展示验证
+                s3, s3_cfg = get_r2_client_and_config()
+                if s3:
+                    swapped_key = f"intermediate/{request_id}/swapped_start.png"
+                    swapped_url = upload_bytes_to_r2(s3, s3_cfg, swapped_key, swapped_bytes, swapped_ct or "image/png")
+                    intermediate_urls.append(swapped_url)
+                    print(f"[DEBUG-COMFY] Swapped image uploaded to: {swapped_url}", flush=True)
+            except Exception as swap_exc:
+                print(f"[WARN-COMFY] Face swap failed, falling back to original image: {swap_exc}", flush=True)
 
     for idx in range(segment_count):
         segment_idx = idx + 1
@@ -1761,21 +1765,24 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
         swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
         print(f"[DEBUG] WAN Face Swap enabled. Face image present: {bool(face_image)}", flush=True)
         if face_image:
-            # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
-            print(f"[DEBUG] Calling Qwen face swap. Base image: {current_start[:100]}..., Face image: {face_image[:100]}...", flush=True)
-            swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
-                current_start, face_image, swap_prompt
-            )
-            print(f"[DEBUG] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
-            current_start, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
-            
-            # 同时也上传到 S3 方便前端展示验证
-            s3, s3_cfg = get_r2_client_and_config()
-            if s3:
-                swapped_key = f"intermediate/{request_id}/swapped_start.png"
-                swapped_url = upload_bytes_to_r2(s3, s3_cfg, swapped_key, swapped_bytes, swapped_ct or "image/png")
-                intermediate_urls.append(swapped_url)
-                print(f"[DEBUG] Swapped image uploaded to: {swapped_url}", flush=True)
+            try:
+                # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
+                print(f"[DEBUG] Calling Qwen face swap. Base image: {current_start[:100]}..., Face image: {face_image[:100]}...", flush=True)
+                swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
+                    current_start, face_image, swap_prompt
+                )
+                print(f"[DEBUG] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
+                current_start, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
+                
+                # 同时也上传到 S3 方便前端展示验证
+                s3, s3_cfg = get_r2_client_and_config()
+                if s3:
+                    swapped_key = f"intermediate/{request_id}/swapped_start.png"
+                    swapped_url = upload_bytes_to_r2(s3, s3_cfg, swapped_key, swapped_bytes, swapped_ct or "image/png")
+                    intermediate_urls.append(swapped_url)
+                    print(f"[DEBUG] Swapped image uploaded to: {swapped_url}", flush=True)
+            except Exception as swap_exc:
+                print(f"[WARN] Face swap failed, falling back to original image: {swap_exc}", flush=True)
 
     for index in range(segment_count):
         current_prompt = segment_prompts[index]
