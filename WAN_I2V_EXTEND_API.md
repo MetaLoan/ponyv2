@@ -114,6 +114,24 @@ curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
 }'
 ```
 
+### 视频续写用法
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <YOUR_API_KEY>" \
+     -d '{
+  "input": {
+    "mode": "wan2_2_i2v_extend_any_frame",
+    "prompt": "镜头继续向前推，展示出更多细节",
+    "startvideo": "https://example.com/base_video.mp4",
+    "frames": 81,
+    "i2v_resolution": "same_as_video",
+    "seed": 888
+  }
+}'
+```
+
 ---
 
 ## 响应格式
