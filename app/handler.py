@@ -218,25 +218,29 @@ def _dashscope_text_chat(prompt: str, system: str = None, model: str = "qwen-max
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
     if not api_key:
         return ""
-    url = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+    url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    
     payload = {
         "model": model,
-        "input": {"messages": []},
-        "parameters": {"result_format": "message"},
+        "messages": messages,
     }
-    if system:
-        payload["input"]["messages"].append({"role": "system", "content": system})
-    payload["input"]["messages"].append({"role": "user", "content": prompt})
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
+        "X-DashScope-DataInspection": "{\"input\":\"disable\", \"output\":\"disable\"}",
     }
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        if resp.status_code != 200:
+            print(f"[dashscope] chat failed with status {resp.status_code}: {resp.text}")
         resp.raise_for_status()
-        return resp.json()["output"]["choices"][0]["message"]["content"]
+        return resp.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        print(f"[dashscope] chat failed: {e}")
+        print(f"[dashscope] chat exception: {e}")
         return ""
 
 
