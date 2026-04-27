@@ -621,8 +621,10 @@ def validate_input(input_data: Dict) -> None:
         if "reference_image" not in input_data:
             raise RuntimeError("reference_image is required for qwen_swap_face")
     elif mode == WAN_EXTEND_ANY_FRAME_MODE:
-        if not str(input_data.get("startimg", "")).strip():
-            raise RuntimeError("startimg is required for wan2_2_i2v_extend_any_frame")
+        has_startimg = bool(str(input_data.get("startimg", "")).strip())
+        has_startvideo = bool(str(input_data.get("startvideo", "")).strip())
+        if not has_startimg and not has_startvideo:
+            raise RuntimeError("Either startimg or startvideo is required for wan2_2_i2v_extend_any_frame")
         if int(input_data.get("frames", 0) or 0) <= 0:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
@@ -1830,7 +1832,7 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
 
     start_media = str(data.get("startimg", "")).strip()
     if not start_media:
-        raise RuntimeError("startimg is required for wan2_2_i2v_extend_any_frame")
+        raise RuntimeError("Either startimg or startvideo is required for wan2_2_i2v_extend_any_frame")
     end_media = str(data.get("endimg", "")).strip()
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     negative_prompt = str(data.get("negative_prompt", "")).strip()
