@@ -598,6 +598,7 @@ function App() {
             mode: mode,
             prompt: String(payload.prompt || ""),
             status: "IN_QUEUE",
+            payload: payload,
             timestamp: Date.now()
           });
           setGenerateResult(null);
@@ -1140,14 +1141,24 @@ function App() {
                 <NumberField label="Segment Duration (Sec)" value={Math.floor((wanSegmentFrames - 1) / 16)} onChange={(v) => setWanSegmentFrames(Math.max(1, v) * 16 + 1)} min={1} max={30} step={1} />
                 <label>
                   Resolution / Ratio
-                  <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
-                    <option value="720P">720P (Default)</option>
-                    <option value="480*832">480*832 (9:16 Portrait)</option>
-                    <option value="832*480">832*480 (16:9 Landscape)</option>
-                    <option value="720*1280">720*1280 (9:16 Portrait)</option>
-                    <option value="1280*720">1280*720 (16:9 Landscape)</option>
-                    <option value="1080*1920">1080*1920 (9:16 Portrait)</option>
-                    <option value="1920*1080">1920*1080 (16:9 Landscape)</option>
+                  <select 
+                    value={wanInputType === "video" ? "same_as_video" : i2vResolution} 
+                    onChange={(e) => setI2VResolution(e.target.value)}
+                    disabled={wanInputType === "video"}
+                  >
+                    {wanInputType === "video" ? (
+                      <option value="same_as_video">和原视频一致</option>
+                    ) : (
+                      <>
+                        <option value="720P">720P (Default)</option>
+                        <option value="480*832">480*832 (9:16 Portrait)</option>
+                        <option value="832*480">832*480 (16:9 Landscape)</option>
+                        <option value="720*1280">720*1280 (9:16 Portrait)</option>
+                        <option value="1280*720">1280*720 (16:9 Landscape)</option>
+                        <option value="1080*1920">1080*1920 (9:16 Portrait)</option>
+                        <option value="1920*1080">1920*1080 (16:9 Landscape)</option>
+                      </>
+                    )}
                   </select>
                 </label>
               </div>

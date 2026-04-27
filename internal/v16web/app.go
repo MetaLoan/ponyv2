@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"database/sql"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -29,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/lib/pq"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -38,6 +40,7 @@ type App struct {
 	httpClient *http.Client
 	router     *http.ServeMux
 	s3Client   *minio.Client
+	db         *sql.DB
 }
 
 type Config struct {
@@ -248,6 +251,32 @@ func NewApp() (*App, error) {
 		}
 		app.s3Client = client
 	}
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" {
+		db, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			log.Printf("Failed to open database connection: %v", err)
+		} else {
+			_, err = db.Exec(`CREATE TABLE IF NOT EXISTS tasks (
+				id VARCHAR(255) PRIMARY KEY,
+				job_id VARCHAR(255),
+				prompt_id VARCHAR(255),
+				mode VARCHAR(255),
+				prompt TEXT,
+				status VARCHAR(50),
+				payload JSONB,
+				result JSONB,
+				timestamp BIGINT
+			)`)
+			if err != nil {
+				log.Printf("Failed to create tasks table: %v", err)
+			} else {
+				app.db = db
+			}
+		}
+	}
+
 	app.routes()
 	return app, nil
 }
@@ -262,6 +291,10 @@ func (a *App) routes() {
 	a.router.HandleFunc("/api/workflow/render", a.handleRenderWorkflow)
 	a.router.HandleFunc("/api/generate", a.handleGenerate)
 	a.router.HandleFunc("/api/status", a.handleStatus)
+
+	a.router.HandleFunc("GET /api/tasks", a.handleGetTasks)
+	a.router.HandleFunc("POST /api/tasks", a.handlePostTask)
+	a.router.HandleFunc("PUT /api/tasks/{id}", a.handlePutTask)
 	a.router.HandleFunc("/api/comfy/view", a.handleComfyView)
 	a.router.HandleFunc("/api/ai/split_prompt", a.handleAiSplitPrompt)
 
@@ -2145,4 +2178,93 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+type Task struct {
+	ID        string      `json:"id"`
+	JobID     string      `json:"job_id,omitempty"`
+	PromptID  string      `json:"prompt_id,omitempty"`
+	Mode      string      `json:"mode"`
+	Prompt    string      `json:"prompt"`
+	Status    string      `json:"status"`
+	Payload   interface{} `json:"payload,omitempty"`
+	Result    interface{} `json:"result,omitempty"`
+	Timestamp int64       `json:"timestamp"`
+}
+
+func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
+	if a.db == nil {
+		writeJSON(w, http.StatusOK, []Task{})
+		return
+	}
+	rows, err := a.db.Query("SELECT id, job_id, prompt_id, mode, prompt, status, payload, result, timestamp FROM tasks ORDER BY timestamp DESC LIMIT 100")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	tasks := []Task{}
+	for rows.Next() {
+		var t Task
+		var payloadData, resultData []byte
+		err := rows.Scan(&t.ID, &t.JobID, &t.PromptID, &t.Mode, &t.Prompt, &t.Status, &payloadData, &resultData, &t.Timestamp)
+		if err != nil {
+			continue
+		}
+		if len(payloadData) > 0 {
+			json.Unmarshal(payloadData, &t.Payload)
+		}
+		if len(resultData) > 0 {
+			json.Unmarshal(resultData, &t.Result)
+		}
+		tasks = append(tasks, t)
+	}
+	writeJSON(w, http.StatusOK, tasks)
+}
+
+func (a *App) handlePostTask(w http.ResponseWriter, r *http.Request) {
+	if a.db == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	var t Task
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	payloadBytes, _ := json.Marshal(t.Payload)
+	resultBytes, _ := json.Marshal(t.Result)
+	_, err := a.db.Exec("INSERT INTO tasks (id, job_id, prompt_id, mode, prompt, status, payload, result, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+		t.ID, t.JobID, t.PromptID, t.Mode, t.Prompt, t.Status, payloadBytes, resultBytes, t.Timestamp)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (a *App) handlePutTask(w http.ResponseWriter, r *http.Request) {
+	if a.db == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing id"})
+		return
+	}
+	var updates map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	
+	if status, ok := updates["status"].(string); ok {
+		a.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, id)
+	}
+	if result, ok := updates["result"]; ok {
+		resultBytes, _ := json.Marshal(result)
+		a.db.Exec("UPDATE tasks SET result = $1 WHERE id = $2", resultBytes, id)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

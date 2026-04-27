@@ -8,36 +8,71 @@ export interface Task {
   prompt: string;
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | string;
   result?: any;
+  payload?: any;
   timestamp: number;
 }
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("ponyv2_tasks");
-    if (saved) {
-      try {
-        setTasks(JSON.parse(saved));
-      } catch (e) {}
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch('/api/tasks');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setTasks(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch tasks from DB", e);
+      // Fallback to local storage if DB is not available
+      const saved = localStorage.getItem("ponyv2_tasks");
+      if (saved) {
+        try {
+          setTasks(JSON.parse(saved));
+        } catch (err) {}
+      }
     }
+  };
+
+  useEffect(() => {
+    fetchTasks();
   }, []);
 
-  const saveTasks = (newTasks: Task[]) => {
+  const saveTasksLocally = (newTasks: Task[]) => {
     setTasks(newTasks);
     localStorage.setItem("ponyv2_tasks", JSON.stringify(newTasks));
   };
 
-  const addTask = (task: Task) => {
-    saveTasks([task, ...tasks]);
+  const addTask = async (task: Task) => {
+    const newTasks = [task, ...tasks];
+    saveTasksLocally(newTasks);
+    try {
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(task)
+      });
+    } catch (e) {
+      console.error("Failed to save task to DB", e);
+    }
   };
 
-  const updateTask = (id: string, updates: Partial<Task>) => {
-    saveTasks(tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+  const updateTask = async (id: string, updates: Partial<Task>) => {
+    const newTasks = tasks.map((t) => (t.id === id ? { ...t, ...updates } : t));
+    saveTasksLocally(newTasks);
+    try {
+      await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (e) {
+      console.error("Failed to update task in DB", e);
+    }
   };
 
   const clearTasks = () => {
-    saveTasks([]);
+    saveTasksLocally([]);
   };
 
   useEffect(() => {
@@ -178,6 +213,17 @@ export function TaskCenter({ tasks, clearTasks }: { tasks: Task[]; clearTasks: (
             </div>
             {t.status === "COMPLETED" && t.result && (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+                {t.payload && (
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(t.payload, null, 2));
+                      alert("Payload copied to clipboard!");
+                    }}
+                    style={{ background: "#4caf50", color: "#fff", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer", fontSize: "12px", alignSelf: "flex-start" }}
+                  >
+                    Copy Payload
+                  </button>
+                )}
                 {(t.result.final_video_urls || t.result.final_video_url ? [t.result.final_video_url, ...(t.result.final_video_urls || [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i) : []).map((url: string, idx: number) => (
                   <div key={`fv-${idx}`} style={{ background: "#1a1a1a", padding: "6px", borderRadius: "6px" }}>
                     <div style={{ fontSize: "0.75em", color: "#888", marginBottom: "4px" }}>Final Video {idx + 1}</div>
