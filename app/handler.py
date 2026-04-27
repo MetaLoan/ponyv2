@@ -215,10 +215,8 @@ def _media_to_dashscope_accessible_url(media: str, request_id: str, prefix: str)
 
 
 def _dashscope_text_chat(prompt: str, system: str = None, model: str = "qwen-max") -> str:
-    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
-    if not api_key:
-        return ""
-    url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip() or "sk-H2DM7mK37fi7erjbuL9T6djsv9pWu"
+    url = "https://ai.sprize.ai/proxy/dashscope-chat/chat/completions"
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
