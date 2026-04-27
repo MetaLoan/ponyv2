@@ -581,7 +581,7 @@ def normalize_input(input_data: Dict) -> Dict:
         data["enable_upscale"] = bool(data.get("use_upscale"))
     data.setdefault("enable_upscale", False)
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
-        data["enable_upscale"] = False
+        data.setdefault("enable_upscale", False)
     if "enable_pulid" not in data:
         data["enable_pulid"] = data["mode"] not in {"pose_only", "text_only", "qwen_swap_face", "qwen_edit_face"}
     if data["mode"] in {"qwen_swap_face", "qwen_edit_face"}:
@@ -1681,6 +1681,38 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
                 prompt["54"]["inputs"]["model"] = ["37", 0]
             if "101" in prompt:
                 prompt["101"]["inputs"]["model"] = ["100", 0]
+
+        use_upscale = bool(data.get("enable_upscale", False))
+        if use_upscale:
+            upscale_name = data.get("upscale_model_name", "4x-UltraSharp.pth")
+            w = prompt["50"]["inputs"]["width"]
+            h = prompt["50"]["inputs"]["height"]
+            new_w = (int(w * 1.5) // 16) * 16
+            new_h = (int(h * 1.5) // 16) * 16
+            
+            prompt["200"] = {
+                "inputs": {"model_name": upscale_name},
+                "class_type": "UpscaleModelLoader"
+            }
+            prompt["201"] = {
+                "inputs": {
+                    "upscale_model": ["200", 0],
+                    "image": ["8", 0]
+                },
+                "class_type": "ImageUpscaleWithModel"
+            }
+            prompt["202"] = {
+                "inputs": {
+                    "upscale_method": "bicubic",
+                    "width": new_w,
+                    "height": new_h,
+                    "crop": "disabled",
+                    "image": ["201", 0]
+                },
+                "class_type": "ImageScale"
+            }
+            if "47" in prompt:
+                prompt["47"]["inputs"]["images"] = ["202", 0]
 
         validate_required_node_types(prompt)
         prompt_id = queue_prompt(prompt)
