@@ -1498,10 +1498,6 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
             pass
 
     if not width or not height:
-        width = int(data.get("width", 0))
-        height = int(data.get("height", 0))
-
-    if not width or not height:
         try:
             input_path = COMFY_INPUT_DIR / current_start_image
             with Image.open(input_path) as img:
@@ -1514,8 +1510,8 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
             else:
                 width, height = (832, 480) if is_landscape else (480, 832)
         except Exception:
-            width = int(WAN_DEFAULT_WIDTH)
-            height = int(WAN_DEFAULT_HEIGHT)
+            width = int(data.get("width", WAN_DEFAULT_WIDTH))
+            height = int(data.get("height", WAN_DEFAULT_HEIGHT))
 
     if "50" in prompt:
         prompt["50"]["inputs"]["width"] = width
