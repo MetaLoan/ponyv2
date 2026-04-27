@@ -1223,6 +1223,75 @@ def _call_dashscope_i2v_extend_any_frame(
     return _submit_and_wait_dashscope_i2v(payload, api_key, api_url)
 
 
+def _ffprobe_video_resolution(video_path: Path) -> Tuple[int, int]:
+    """Use ffprobe to detect video width and height."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0:s=x",
+        str(video_path),
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {proc.stderr.decode('utf-8', errors='ignore')[:2000]}")
+    parts = proc.stdout.decode().strip().split("x")
+    if len(parts) != 2:
+        raise RuntimeError(f"ffprobe returned unexpected resolution format: {proc.stdout.decode().strip()}")
+    return int(parts[0]), int(parts[1])
+
+
+def _download_media_to_file(media: str, request_id: str, suffix: str = ".mp4") -> Path:
+    """Download or decode a media string (URL / Base64 / data URI) to a local temp file."""
+    import re as _re
+    media = media.strip()
+    out_path = COMFY_OUTPUT_DIR / f"startvideo_{request_id}{suffix}"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if media.startswith("http://") or media.startswith("https://"):
+        resp = requests.get(media, timeout=300)
+        resp.raise_for_status()
+        out_path.write_bytes(resp.content)
+    else:
+        # data URI or raw base64
+        b64_data = media
+        m = _re.match(r"data:[^;]*;base64,(.+)", media, _re.DOTALL)
+        if m:
+            b64_data = m.group(1)
+        out_path.write_bytes(base64.b64decode(b64_data))
+
+    return out_path
+
+
+def _process_startvideo(data: Dict, request_id: str) -> Tuple[Optional[Path], Optional[str]]:
+    """
+    If startvideo is provided, download it, detect resolution, extract last frame,
+    and return (local_video_path, resolution_string).
+    If not provided, return (None, None).
+    """
+    startvideo = str(data.get("startvideo", "")).strip()
+    if not startvideo:
+        return None, None
+
+    print(f"[DEBUG] Processing startvideo...", flush=True)
+    local_video = _download_media_to_file(startvideo, request_id, ".mp4")
+    print(f"[DEBUG] Startvideo downloaded to: {local_video} ({local_video.stat().st_size} bytes)", flush=True)
+
+    # Detect resolution
+    w, h = _ffprobe_video_resolution(local_video)
+    resolution_str = f"{w}*{h}"
+    print(f"[DEBUG] Startvideo resolution detected: {resolution_str}", flush=True)
+
+    # Extract last frame and set as startimg
+    last_frame_bytes = _extract_video_last_frame_bytes(local_video)
+    start_data_url, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
+    data["startimg"] = start_data_url
+    data["i2v_resolution"] = resolution_str
+    print(f"[DEBUG] Extracted last frame from startvideo ({len(last_frame_bytes)} bytes), resolution forced to {resolution_str}", flush=True)
+
+    return local_video, resolution_str
+
+
 def _extract_video_last_frame_bytes(video_path: Path) -> bytes:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
         frame_path = Path(tmp.name)
@@ -1479,6 +1548,9 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     if str(data.get("endimg", "")).strip():
         raise RuntimeError("WAN Comfy workflow does not support endimg natively.")
 
+    # Process startvideo if provided (extracts last frame, detects resolution)
+    prepend_video_path, _ = _process_startvideo(data, request_id)
+
     total_frames = int(data.get("frames", 81) or 81)
     segment_limit = 161  # 10 seconds at 16fps
     segment_count = max(1, (total_frames + segment_limit - 1) // segment_limit)
@@ -1660,9 +1732,15 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     if not segment_video_paths:
         raise RuntimeError("No segments were successfully generated.")
 
+    # If startvideo was provided, prepend it before generated segments
+    all_video_paths = segment_video_paths
+    if prepend_video_path and prepend_video_path.exists():
+        print(f"[DEBUG-COMFY] Prepending startvideo to generated segments", flush=True)
+        all_video_paths = [prepend_video_path] + segment_video_paths
+
     merged_filename = f"wan_{request_id}_merged.mp4"
     merged_path = COMFY_OUTPUT_DIR / merged_filename
-    _concat_video_segments(segment_video_paths, merged_path)
+    _concat_video_segments(all_video_paths, merged_path)
 
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:
@@ -1745,6 +1823,9 @@ def collect_output_images(history_obj: Dict) -> Tuple[List[Dict], List[Dict]]:
 
 
 def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
+    # Process startvideo if provided (extracts last frame, detects resolution)
+    prepend_video_path, _ = _process_startvideo(data, request_id)
+
     start_media = str(data.get("startimg", "")).strip()
     if not start_media:
         raise RuntimeError("startimg is required for wan2_2_i2v_extend_any_frame")
@@ -1827,7 +1908,14 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
     merged_filename = f"wan_extend_{request_id}_merged.mp4"
     merged_path = COMFY_OUTPUT_DIR / merged_filename
     merged_path.parent.mkdir(parents=True, exist_ok=True)
-    _concat_video_segments(segment_paths, merged_path)
+
+    # If startvideo was provided, prepend it before generated segments
+    all_paths = segment_paths
+    if prepend_video_path and prepend_video_path.exists():
+        print(f"[DEBUG] Prepending startvideo to generated segments", flush=True)
+        all_paths = [prepend_video_path] + segment_paths
+
+    _concat_video_segments(all_paths, merged_path)
 
     s3, s3_cfg = get_r2_client_and_config()
     if not s3:

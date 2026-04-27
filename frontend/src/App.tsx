@@ -175,6 +175,7 @@ function App() {
   const [wanFaceMedia, setWanFaceMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [enableWanFaceSwap, setEnableWanFaceSwap] = useState(false);
   const [wanFaceSwapPrompt, setWanFaceSwapPrompt] = useState(DEFAULT_QWEN_SWAP_PROMPT);
+  const [wanStartVideoMedia, setWanStartVideoMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [i2vResolution, setI2VResolution] = useState("720P");
   const [i2vDuration, setI2VDuration] = useState(5);
   const [i2vSeed, setI2VSeed] = useState<number>(12345);
@@ -371,6 +372,10 @@ function App() {
         body.face_image = mediaToPayloadValue(wanFaceMedia);
         body.wan_face_swap_prompt = wanFaceSwapPrompt;
       }
+      const startVideoVal = mediaToPayloadValue(wanStartVideoMedia);
+      if (startVideoVal) {
+        body.startvideo = startVideoVal;
+      }
     } else {
       body.width = width;
       body.height = height;
@@ -464,6 +469,7 @@ function App() {
     wanFaceMedia,
     enableWanFaceSwap,
     wanFaceSwapPrompt,
+    wanStartVideoMedia,
     i2vResolution,
     i2vAudioURL,
     i2vPromptExtend,
@@ -559,6 +565,10 @@ function App() {
         if (enableWanFaceSwap) {
           body.face_image = await resolveMedia(wanFaceMedia);
         }
+        const resolvedStartVideo = await resolveMedia(wanStartVideoMedia);
+        if (resolvedStartVideo) {
+          body.startvideo = resolvedStartVideo;
+        }
       }
       if (mode === "pose_then_face_swap" || mode === "pose_only") {
         body.pose_image = await resolveMedia(poseMedia);
@@ -630,7 +640,7 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", patch: Partial<MediaState>) {
+  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", patch: Partial<MediaState>) {
     const setter =
       which === "reference"
         ? setReferenceMedia
@@ -640,11 +650,13 @@ function App() {
             ? setQwenExtraMedia
             : which === "wanStart"
               ? setWanStartMedia
-              : setWanFaceMedia;
+              : which === "wanStartVideo"
+                ? setWanStartVideoMedia
+                : setWanFaceMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -654,7 +666,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -1059,6 +1071,14 @@ function App() {
               onKindChange={(kind) => updateMedia("wanStart", { kind })}
               onFileChange={(e) => onFileChange("wanStart", e)}
               onURLChange={(value) => onURLChange("wanStart", value)}
+            />
+            <MediaCard
+              title="WAN Start Video (可选: 续写视频)"
+              media={wanStartVideoMedia}
+              onKindChange={(kind) => updateMedia("wanStartVideo", { kind })}
+              onFileChange={(e) => onFileChange("wanStartVideo", e)}
+              onURLChange={(value) => onURLChange("wanStartVideo", value)}
+              accept="video/*"
             />
             <div className="subcard" style={{ marginTop: "0.5rem" }}>
               <label className="toggle">
@@ -1644,13 +1664,16 @@ function MediaCard({
   onKindChange,
   onFileChange,
   onURLChange,
+  accept,
 }: {
   title: string;
   media: MediaState;
   onKindChange: (kind: "file" | "url") => void;
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onURLChange: (value: string) => void;
+  accept?: string;
 }) {
+  const isVideo = accept?.includes("video") || media.preview?.match(/\.(mp4|webm|mov|avi)/i) || media.file?.type?.startsWith("video/");
   return (
     <section className="card">
       <h2>{title}</h2>
@@ -1664,13 +1687,17 @@ function MediaCard({
           URL
         </label>
       </div>
-      <input type="file" accept="image/*" onChange={onFileChange} />
+      <input type="file" accept={accept || "image/*"} onChange={onFileChange} />
       <input
         placeholder="https://..."
         value={media.url}
         onChange={(e) => onURLChange(e.target.value)}
       />
-      {media.preview && <img className="preview" src={media.preview} alt={title} />}
+      {media.preview && (
+        isVideo
+          ? <video className="preview" src={media.preview} controls playsInline style={{ maxWidth: "100%", maxHeight: 200 }} />
+          : <img className="preview" src={media.preview} alt={title} />
+      )}
     </section>
   );
 }

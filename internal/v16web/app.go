@@ -133,6 +133,7 @@ type GenerateRequest struct {
 	WanFaceSwap         *bool        `json:"wan_face_swap"`
 	FaceImage           string       `json:"face_image"`
 	WanFaceSwapPrompt   string       `json:"wan_face_swap_prompt"`
+	StartVideo          string       `json:"startvideo"`
 }
 
 type LoraConfig struct {
@@ -1090,6 +1091,9 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		input["wan_face_swap"] = true
 		input["face_image"] = req.FaceImage
 		input["wan_face_swap_prompt"] = req.WanFaceSwapPrompt
+	}
+	if req.StartVideo != "" {
+		input["startvideo"] = req.StartVideo
 	}
 	if req.PoseImage != "" {
 		input["pose_image"] = req.PoseImage
