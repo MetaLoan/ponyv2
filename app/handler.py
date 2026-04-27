@@ -1491,6 +1491,8 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     segment_video_paths = []
     current_start_media = str(data.get("startimg", "")).strip()
 
+    print(f"[DEBUG-COMFY] Starting comfy processing. wan_face_swap={data.get('wan_face_swap')}", flush=True)
+
     if bool(data.get("wan_face_swap", False)):
         face_image = str(data.get("face_image", "")).strip()
         swap_prompt = str(data.get("wan_face_swap_prompt", QWEN_DEFAULT_SWAP_PROMPT)).strip()
@@ -1896,6 +1898,8 @@ def handler(event: Dict) -> Dict:
 
     print(f"[DEBUG] Mode comparison: {data['mode']} == {WAN_EXTEND_ANY_FRAME_MODE}?", flush=True)
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
+        print(f"[DEBUG] Extracted wan_face_swap: {data.get('wan_face_swap')} (type: {type(data.get('wan_face_swap'))})", flush=True)
+        print(f"[DEBUG] Extracted face_image present: {bool(data.get('face_image'))}", flush=True)
         if _wan_use_comfy_backend(data):
             try:
                 return _generate_wan_extend_any_frame_comfy(data, request_id, event=event)
