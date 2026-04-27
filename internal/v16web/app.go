@@ -1086,6 +1086,11 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"i2v_watermark":          req.I2VWatermark != nil && *req.I2VWatermark,
 		"request_id":             req.RequestID,
 	}
+	if req.WanFaceSwap != nil && *req.WanFaceSwap {
+		input["wan_face_swap"] = true
+		input["face_image"] = req.FaceImage
+		input["wan_face_swap_prompt"] = req.WanFaceSwapPrompt
+	}
 	if req.PoseImage != "" {
 		input["pose_image"] = req.PoseImage
 	}
