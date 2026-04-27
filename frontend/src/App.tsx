@@ -368,8 +368,6 @@ function App() {
       body.base_cfg = baseCfg;
       body.cfg = cfg;
       body.segment_limit = wanSegmentFrames;
-      body.enable_upscale = enableUpscale;
-      body.upscale_model_name = upscaleModelName;
       body.auto_segment_prompts = autoSegmentPrompts;
       const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
       body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
@@ -1435,24 +1433,6 @@ function App() {
               <div className="inline">
                 <NumberField label="Base Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={100} step={1} />
                 <NumberField label="CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
-              </div>
-              <div style={{ marginTop: "1rem", padding: "0.5rem", borderTop: "1px dashed #444" }}>
-                <label className="toggle">
-                  <input type="checkbox" checked={enableUpscale} onChange={(e) => setEnableUpscale(e.target.checked)} />
-                  Enable 1.5x AI Upscale (4x-UltraSharp)
-                </label>
-                {enableUpscale && (
-                  <label style={{ marginTop: "0.5rem", display: "block" }}>
-                    Upscale Model
-                    <select value={upscaleModelName} onChange={(e) => setUpscaleModelName(e.target.value)}>
-                      {(catalog.upscale_models || []).map((item) => (
-                        <option key={item.path} value={item.name}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
               </div>
             </section>
           )}
