@@ -4,6 +4,7 @@ import json
 import fcntl
 import mimetypes
 import os
+import random
 import subprocess
 import tempfile
 import time
@@ -918,14 +919,16 @@ def _resolve_qwen_edit_prompt(template: str, prompt_text: str) -> str:
     return source
 
 
-def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str) -> Tuple[bytes, str]:
+def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str, request_id: str = "") -> Tuple[bytes, str]:
     api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("DASHSCOPE_API_KEY is required for qwen face swap")
 
     # 图1 为底图 (base_media), 图2 为脸部 (face_media)
-    base_input, _ = _media_to_qwen_data_url(base_media)
-    face_input, _ = _media_to_qwen_data_url(face_media)
+    # 需要上传为可访问的 URL 而非 data URI
+    rid = request_id or uuid.uuid4().hex
+    base_url = _media_to_dashscope_accessible_url(base_media, rid, "swap_base")
+    face_url = _media_to_dashscope_accessible_url(face_media, rid, "swap_face")
 
     payload = {
         "model": QWEN_MODEL,
@@ -934,24 +937,30 @@ def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str
                 {
                     "role": "user",
                     "content": [
-                        {"image": base_input},
-                        {"image": face_input},
+                        {"image": base_url},
+                        {"image": face_url},
                         {"text": prompt}
                     ]
                 }
             ]
         },
         "parameters": {
-            "result_format": "message"
+            "n": 1,
+            "negative_prompt": " ",
+            "prompt_extend": False,
+            "seed": random.randint(0, 999999999),
+            "size": "1152*2048",
+            "watermark": False
         }
     }
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
-        "X-DashScope-DataInspection": '{"input":"disable", "output":"disable"}',
+        "X-DashScope-DataInspection": QWEN_DATA_INSPECTION,
     }
 
+    print(f"[DEBUG] Qwen face swap request: model={QWEN_MODEL}, base_url={base_url[:80]}..., face_url={face_url[:80]}...", flush=True)
     resp = requests.post(QWEN_API_URL, json=payload, headers=headers, timeout=300)
     if resp.status_code >= 400:
         raise RuntimeError(f"Qwen face swap failed: {resp.text}")
@@ -1503,7 +1512,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
                 # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
                 print(f"[DEBUG-COMFY] Calling Qwen face swap. Base image: {current_start_media[:100]}..., Face image: {face_image[:100]}...", flush=True)
                 swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
-                    current_start_media, face_image, swap_prompt
+                    current_start_media, face_image, swap_prompt, request_id
                 )
                 print(f"[DEBUG-COMFY] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
                 current_start_media, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
@@ -1769,7 +1778,7 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
                 # 图1 (startimg) 是底图, 图2 (face_image) 是脸部
                 print(f"[DEBUG] Calling Qwen face swap. Base image: {current_start[:100]}..., Face image: {face_image[:100]}...", flush=True)
                 swapped_bytes, swapped_ct = _call_dashscope_qwen_face_swap(
-                    current_start, face_image, swap_prompt
+                    current_start, face_image, swap_prompt, request_id
                 )
                 print(f"[DEBUG] Qwen face swap completed. Swapped bytes size: {len(swapped_bytes)}", flush=True)
                 current_start, _ = _image_bytes_to_qwen_data_url(swapped_bytes)
