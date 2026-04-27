@@ -1682,16 +1682,21 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             if "101" in prompt:
                 prompt["101"]["inputs"]["model"] = ["100", 0]
 
-        use_upscale = bool(data.get("enable_upscale", False))
-        if use_upscale:
-            upscale_name = data.get("upscale_model_name", "4x-UltraSharp.pth")
-            w = prompt["50"]["inputs"]["width"]
-            h = prompt["50"]["inputs"]["height"]
-            new_w = (int(w * 1.5) // 16) * 16
-            new_h = (int(h * 1.5) // 16) * 16
+        target_w = prompt["50"]["inputs"]["width"]
+        target_h = prompt["50"]["inputs"]["height"]
+        
+        # Automatic upscale logic for large resolutions to prevent OOM
+        if target_w * target_h > 450000:
+            import math
+            scale_ratio = math.sqrt((target_w * target_h) / 399360.0)
+            base_w = (int(target_w / scale_ratio) // 16) * 16
+            base_h = (int(target_h / scale_ratio) // 16) * 16
+            
+            prompt["50"]["inputs"]["width"] = max(256, base_w)
+            prompt["50"]["inputs"]["height"] = max(256, base_h)
             
             prompt["200"] = {
-                "inputs": {"model_name": upscale_name},
+                "inputs": {"model_name": "4x-UltraSharp.pth"},
                 "class_type": "UpscaleModelLoader"
             }
             prompt["201"] = {
@@ -1704,8 +1709,8 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             prompt["202"] = {
                 "inputs": {
                     "upscale_method": "bicubic",
-                    "width": new_w,
-                    "height": new_h,
+                    "width": target_w,
+                    "height": target_h,
                     "crop": "disabled",
                     "image": ["201", 0]
                 },
