@@ -130,6 +130,9 @@ type GenerateRequest struct {
 	SegmentLimit        int          `json:"segment_limit"`
 	AutoSegmentPrompts  bool         `json:"auto_segment_prompts"`
 	Async               bool         `json:"async"`
+	WanFaceSwap         *bool        `json:"wan_face_swap"`
+	FaceImage           string       `json:"face_image"`
+	WanFaceSwapPrompt   string       `json:"wan_face_swap_prompt"`
 }
 
 type LoraConfig struct {
