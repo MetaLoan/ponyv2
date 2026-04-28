@@ -1296,6 +1296,17 @@ function App() {
                           </option>
                         ))}
                       </select>
+                      {row.name && (
+                        <select value={row.wan_low_name || ""} onChange={(e) => updateLora(row.id, { wan_low_name: e.target.value })}>
+                          <option value="">(Same as High LoRA)</option>
+                          <option value="none">(None - Do not apply)</option>
+                          {(catalog.loras || []).map((item) => (
+                            <option key={item.path} value={item.name}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <div className="inline">
                         <NumberField label="Model" value={row.strength_model} onChange={(v) => updateLora(row.id, { strength_model: v })} min={0} max={2} step={0.05} />
                         <NumberField label="Clip" value={row.strength_clip} onChange={(v) => updateLora(row.id, { strength_clip: v })} min={0} max={2} step={0.05} />
