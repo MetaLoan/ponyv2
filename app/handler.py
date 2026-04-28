@@ -1715,29 +1715,29 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             prompt["50"]["inputs"]["width"] = max(256, base_w)
             prompt["50"]["inputs"]["height"] = max(256, base_h)
             
-            prompt["200"] = {
+            prompt["300"] = {
                 "inputs": {"model_name": "4x-UltraSharp.pth"},
                 "class_type": "UpscaleModelLoader"
             }
-            prompt["201"] = {
+            prompt["301"] = {
                 "inputs": {
-                    "upscale_model": ["200", 0],
+                    "upscale_model": ["300", 0],
                     "image": ["8", 0]
                 },
                 "class_type": "ImageUpscaleWithModel"
             }
-            prompt["202"] = {
+            prompt["302"] = {
                 "inputs": {
                     "upscale_method": "bicubic",
                     "width": target_w,
                     "height": target_h,
                     "crop": "disabled",
-                    "image": ["201", 0]
+                    "image": ["301", 0]
                 },
                 "class_type": "ImageScale"
             }
             if "47" in prompt:
-                prompt["47"]["inputs"]["images"] = ["202", 0]
+                prompt["47"]["inputs"]["images"] = ["302", 0]
 
         validate_required_node_types(prompt)
         prompt_id = queue_prompt(prompt)
