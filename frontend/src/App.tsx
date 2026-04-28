@@ -31,6 +31,7 @@ type HealthResponse = {
 type LoraRow = {
   id: string;
   name: string;
+  wan_low_name?: string;
   strength_model: number;
   strength_clip: number;
 };
@@ -333,9 +334,10 @@ function App() {
   const payload = useMemo(() => {
     const cleanLoras = enableLora
       ? loras
-          .filter((item) => item.name.trim() !== "")
-          .map(({ name, strength_model, strength_clip }) => ({
+          .filter((row) => row.name.trim() !== "")
+          .map(({ name, wan_low_name, strength_model, strength_clip }) => ({
             name,
+            wan_low_name,
             strength_model,
             strength_clip,
           }))
@@ -877,6 +879,7 @@ function App() {
             return {
               id: crypto.randomUUID(),
               name: typeof row.name === "string" ? row.name : "",
+              wan_low_name: typeof row.wan_low_name === "string" ? row.wan_low_name : undefined,
               strength_model: typeof row.strength_model === "number" ? row.strength_model : 0.6,
               strength_clip: typeof row.strength_clip === "number" ? row.strength_clip : 0.9,
             } satisfies LoraRow;
@@ -1386,6 +1389,17 @@ function App() {
                           </option>
                         ))}
                       </select>
+                      {isWanMode && row.name && (
+                        <select value={row.wan_low_name || ""} onChange={(e) => updateLora(row.id, { wan_low_name: e.target.value })}>
+                          <option value="">(Same as High LoRA)</option>
+                          <option value="none">(None - Do not apply)</option>
+                          {(catalog.loras || []).map((item) => (
+                            <option key={item.path} value={item.name}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <div className="inline">
                         <NumberField label="Model" value={row.strength_model} onChange={(v) => updateLora(row.id, { strength_model: v })} min={0} max={2} step={0.05} />
                         <NumberField label="Clip" value={row.strength_clip} onChange={(v) => updateLora(row.id, { strength_clip: v })} min={0} max={2} step={0.05} />

@@ -1651,11 +1651,18 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
             prev_low_ref = ["100", 0]
             for lora in loras:
                 name = lora["name"]
-                high_file = name
-                low_file = name
                 if name in registry:
                     high_file = registry[name].get("high", "none")
                     low_file = registry[name].get("low", "none")
+                else:
+                    high_file = name
+                    wan_low = lora.get("wan_low_name")
+                    if wan_low == "none":
+                        low_file = "none"
+                    elif wan_low:
+                        low_file = wan_low
+                    else:
+                        low_file = name
                 strength = float(lora.get("strength_model", lora.get("strength", 1.0) or 1.0))
                 if high_file != "none":
                     node_id_h = str(next_node_id)
