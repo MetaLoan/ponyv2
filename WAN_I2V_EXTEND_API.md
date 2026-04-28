@@ -114,6 +114,41 @@ curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
 }'
 ```
 
+### 挂载 LoRA（支持双模分离）
+
+Wan 架构支持挂载单体 LoRA 或者分为 High/Low 的双体 LoRA：
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <YOUR_API_KEY>" \
+     -d '{
+  "input": {
+    "mode": "wan2_2_i2v_extend_any_frame",
+    "prompt": "使用特殊效果展示的风格化视频",
+    "startimg": "https://example.com/start_frame.jpg",
+    "frames": 81,
+    "enable_lora": true,
+    "loras": [
+      {
+        "name": "WAN-2.2-I2V-POV-Body-Cumshot-Pullout-HIGH-v1.safetensors",
+        "wan_low_name": "WAN-2.2-I2V-POV-Body-Cumshot-Pullout-LOW-v1.safetensors",
+        "strength_model": 0.6,
+        "strength_clip": 0.9
+      }
+    ]
+  }
+}'
+```
+
+**参数说明：**
+- `enable_lora`: 设置为 `true` 以启用。
+- `name`: 指定挂载在主网络 (High UNet) 上的 LoRA 文件名。
+- `wan_low_name`: (可选) 指定挂载在副网络 (Low UNet) 上的 LoRA 文件名。
+  - 传具体的 `xxx.safetensors`：分离挂载。
+  - 不传此字段 (或留空)：副网络默认与主网络挂载同一个模型 (等同于传统的单体 LoRA)。
+  - 传 `"none"`：强制在副网络上不挂载任何 LoRA。
+
 ### 视频续写用法
 
 ```bash
