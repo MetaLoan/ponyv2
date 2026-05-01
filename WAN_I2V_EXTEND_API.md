@@ -244,19 +244,23 @@ curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
 
 ## 任务取消接口（`cancel_task`）
 
-使用 `cancel_task` 模式可以取消正在运行或排队中的任务。
+建议使用网关提供的标准 `DELETE` 接口来取消正在运行或排队中的任务。网关同时保留了透传 `cancel_task` mode 的兼容方式。
 
-### 请求参数
+### 方式一（推荐）：使用标准的 DELETE 接口
 
-| 参数 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `mode` | string | **是** | 必须为 `"cancel_task"` |
-| `cancel_request_id` | string | **是** | 要取消的任务的 `request_id` |
-
-### 请求示例
+**DELETE** `/proxy/cancel/:task_id`
 
 ```bash
-curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
+curl -X DELETE "https://<YOUR_GATEWAY_URL>/proxy/cancel/abc123def456" \
+     -H "Authorization: Bearer <YOUR_API_KEY>"
+```
+
+### 方式二（兼容）：使用自定义模型端点发送取消指令
+
+**POST** `/proxy/:custom_model/*path`
+
+```bash
+curl -X POST "https://<YOUR_GATEWAY_URL>/proxy/wan2_2/run" \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer <YOUR_API_KEY>" \
      -d '{
