@@ -1,3 +1,19 @@
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+
+# Sensitive
+civitai_key.env
+s3-credentials.txt
+*.env.local
+
+# Temp files
+.DS_Store
+__pycache__/
+*.pyc
+extracted_workflow.json
+*.mp4
+
+# Downloaded workflow JSONs (not part of source)
+wan2.2-continuos-svi-latent-2ksampler-fixed*.json
+WAN2.2-I2V-AutoPrompt-Story.json

@@ -7,6 +7,7 @@ import os
 import random
 import subprocess
 import tempfile
+import threading
 import time
 import sys
 import uuid
@@ -79,6 +80,145 @@ WAN_CLIP_NAME = os.getenv("WAN_CLIP_NAME", "umt5_xxl_fp8_e4m3fn_scaled.safetenso
 WAN_UNET_HIGH_NAME = os.getenv("WAN_UNET_HIGH_NAME", "WAN2.2-NSFW-FastMove-V2-H.safetensors")
 WAN_UNET_LOW_NAME = os.getenv("WAN_UNET_LOW_NAME", "WAN2.2-NSFW-FastMove-V2-L.safetensors")
 
+# ---------------------------------------------------------------------------
+# Task cancellation infrastructure
+# ---------------------------------------------------------------------------
+_cancelled_lock = threading.Lock()
+_cancelled_request_ids: set = set()          # request_ids that have been cancelled
+_active_prompt_ids: Dict[str, str] = {}      # request_id -> comfy prompt_id (currently running)
+
+
+class TaskCancelledError(Exception):
+    """Raised when a task has been marked as cancelled."""
+
+
+def _mark_cancelled(request_id: str) -> None:
+    """Add a request_id to the cancellation set."""
+    with _cancelled_lock:
+        _cancelled_request_ids.add(request_id)
+
+
+def _is_cancelled(request_id: str) -> bool:
+    """Check whether a request_id has been cancelled."""
+    with _cancelled_lock:
+        return request_id in _cancelled_request_ids
+
+
+def _check_cancelled(request_id: str) -> None:
+    """Raise TaskCancelledError if the request has been cancelled."""
+    if _is_cancelled(request_id):
+        raise TaskCancelledError(f"Task {request_id} has been cancelled")
+
+
+def _register_active_prompt(request_id: str, prompt_id: str) -> None:
+    """Record which comfy prompt_id belongs to a given request_id."""
+    with _cancelled_lock:
+        _active_prompt_ids[request_id] = prompt_id
+
+
+def _unregister_active_prompt(request_id: str) -> None:
+    """Remove the prompt_id mapping when the task finishes."""
+    with _cancelled_lock:
+        _active_prompt_ids.pop(request_id, None)
+
+
+def _interrupt_comfy_prompt(request_id: str) -> bool:
+    """Ask ComfyUI to interrupt the currently running prompt for this request.
+    Also removes any queued-but-not-started prompts via /queue DELETE.
+    Returns True if an interrupt was attempted.
+    """
+    with _cancelled_lock:
+        prompt_id = _active_prompt_ids.get(request_id)
+    if not prompt_id:
+        return False
+    try:
+        # Interrupt current execution
+        requests.post(f"{COMFY_API_URL}/interrupt", timeout=5)
+        # Delete from queue if still pending
+        requests.post(
+            f"{COMFY_API_URL}/queue",
+            json={"delete": [prompt_id]},
+            timeout=5,
+        )
+        print(f"[CANCEL] Interrupted ComfyUI prompt {prompt_id} for request {request_id}", flush=True)
+        return True
+    except Exception as exc:
+        print(f"[CANCEL] Failed to interrupt ComfyUI: {exc}", flush=True)
+        return False
+
+
+def _cleanup_cancelled(request_id: str) -> None:
+    """Clean up cancellation state after a task is fully done."""
+    with _cancelled_lock:
+        _cancelled_request_ids.discard(request_id)
+        _active_prompt_ids.pop(request_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic: tail_logs handler
+# ---------------------------------------------------------------------------
+def _handle_tail_logs(data: Dict) -> Dict:
+    """Return the last N lines of /tmp/comfy.log plus system diagnostics.
+    This is a zero-cost diagnostic call — no ComfyUI workflow is executed.
+    """
+    lines = int(data.get("lines", 200) or 200)
+    lines = max(1, min(lines, 2000))  # clamp to [1, 2000]
+    log_path = Path("/tmp/comfy.log")
+
+    # --- Logs ---
+    if log_path.exists():
+        all_lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        total_lines = len(all_lines)
+        tail = all_lines[-lines:]
+    else:
+        total_lines = 0
+        tail = ["<no /tmp/comfy.log found>"]
+
+    # --- ComfyUI system_stats (queue depth, GPU info) ---
+    system_stats = {}
+    queue_info = {}
+    try:
+        r = requests.get(f"{COMFY_API_URL}/system_stats", timeout=5)
+        if r.status_code == 200:
+            system_stats = r.json()
+    except Exception:
+        system_stats = {"error": "ComfyUI not reachable"}
+
+    try:
+        r = requests.get(f"{COMFY_API_URL}/queue", timeout=5)
+        if r.status_code == 200:
+            q = r.json()
+            queue_info = {
+                "queue_running": len(q.get("queue_running", [])),
+                "queue_pending": len(q.get("queue_pending", [])),
+            }
+    except Exception:
+        queue_info = {"error": "Could not fetch queue"}
+
+    # --- Active tasks in this worker ---
+    with _cancelled_lock:
+        active_tasks = dict(_active_prompt_ids)
+        cancelled_count = len(_cancelled_request_ids)
+
+    # --- Worker environment ---
+    worker_info = {
+        "pod_id": os.getenv("RUNPOD_POD_ID", "unknown"),
+        "gpu_id": os.getenv("RUNPOD_GPU_ID", os.getenv("NVIDIA_VISIBLE_DEVICES", "unknown")),
+        "image_revision": os.getenv("IMAGE_REVISION", "unknown"),
+    }
+
+    return {
+        "ok": True,
+        "mode": "tail_logs",
+        "log_lines": tail,
+        "log_total_lines": total_lines,
+        "log_returned": len(tail),
+        "system_stats": system_stats,
+        "queue": queue_info,
+        "active_tasks": active_tasks,
+        "cancelled_count": cancelled_count,
+        "worker": worker_info,
+    }
 
 def _first_env(*names: str, default: str = "") -> str:
     for name in names:
@@ -629,6 +769,10 @@ def validate_input(input_data: Dict) -> None:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
         pass
+    elif mode == "cancel_task":
+        return  # cancel_task is handled before validate_input is called, but just in case
+    elif mode == "tail_logs":
+        return  # tail_logs is handled before validate_input is called
     else:
         raise RuntimeError(f"Unsupported mode: {mode}")
     if not str(input_data.get("prompt", "")).strip():
@@ -838,7 +982,7 @@ def validate_required_node_types(prompt: Dict) -> None:
         )
 
 
-def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None) -> Dict:
+def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None, request_id: str = "") -> Dict:
     deadline = time.time() + timeout_sec
     log_file = Path("/tmp/comfy.log")
     f = None
@@ -856,6 +1000,11 @@ def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None) ->
 
     try:
         while time.time() < deadline:
+            # Check for cancellation every poll cycle
+            if request_id and _is_cancelled(request_id):
+                _interrupt_comfy_prompt(request_id)
+                raise TaskCancelledError(f"Task {request_id} cancelled during ComfyUI execution")
+
             r = requests.get(f"{COMFY_API_URL}/history/{prompt_id}", timeout=30)
             r.raise_for_status()
             data = r.json()
@@ -1614,6 +1763,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
                 print(f"[WARN-COMFY] Face swap failed, falling back to original image: {swap_exc}", flush=True)
 
     for idx in range(segment_count):
+        _check_cancelled(request_id)  # abort between segments if cancelled
         segment_idx = idx + 1
         current_prompt_text = segment_prompts[idx]
         segment_frames = min(segment_limit, total_frames - (idx * segment_limit))
@@ -1740,8 +1890,13 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
                 prompt["47"]["inputs"]["images"] = ["302", 0]
 
         validate_required_node_types(prompt)
+        _check_cancelled(request_id)
         prompt_id = queue_prompt(prompt)
-        history_obj = wait_history(prompt_id, event=event)
+        _register_active_prompt(request_id, prompt_id)
+        try:
+            history_obj = wait_history(prompt_id, event=event, request_id=request_id)
+        finally:
+            _unregister_active_prompt(request_id)
 
         image_files = []
         outputs = history_obj.get("outputs", {})
@@ -1934,6 +2089,7 @@ def _generate_wan_extend_any_frame(data: Dict, request_id: str) -> Dict:
                 print(f"[WARN] Face swap failed, falling back to original image: {swap_exc}", flush=True)
 
     for index in range(segment_count):
+        _check_cancelled(request_id)  # abort between segments if cancelled
         current_prompt = segment_prompts[index]
         current_end = end_media if index == segment_count - 1 and end_media else ""
         video_raw, video_content_type = _call_dashscope_i2v_extend_any_frame(
@@ -2057,7 +2213,59 @@ def handler(event: Dict) -> Dict:
     print(f"[DEBUG] Handler received mode: {data.get('mode')}", flush=True)
     request_id = data.get("request_id") or uuid.uuid4().hex
     data["request_id"] = request_id
+
+    # ---------------------------------------------------------------
+    # Fast-path: cancel_task mode
+    # ---------------------------------------------------------------
+    if data.get("mode") == "cancel_task":
+        cancel_target = str(data.get("cancel_request_id", request_id)).strip()
+        if not cancel_target:
+            return {"ok": False, "error": "cancel_request_id is required for cancel_task mode"}
+        _mark_cancelled(cancel_target)
+        interrupted = _interrupt_comfy_prompt(cancel_target)
+        print(f"[CANCEL] Task {cancel_target} marked as cancelled (interrupt_sent={interrupted})", flush=True)
+        return {
+            "ok": True,
+            "cancelled": True,
+            "cancel_request_id": cancel_target,
+            "interrupt_sent": interrupted,
+        }
+
+    # ---------------------------------------------------------------
+    # Fast-path: tail_logs mode — lightweight diagnostic endpoint
+    # ---------------------------------------------------------------
+    if data.get("mode") == "tail_logs":
+        return _handle_tail_logs(data)
+
     validate_input(data)
+
+    # Check if this task was already cancelled before we start any heavy work
+    if _is_cancelled(request_id):
+        _cleanup_cancelled(request_id)
+        print(f"[CANCEL] Task {request_id} was pre-cancelled, skipping execution", flush=True)
+        return {
+            "ok": True,
+            "cancelled": True,
+            "request_id": request_id,
+            "message": "Task was cancelled before execution started",
+        }
+
+    try:
+        return _handler_inner(data, request_id, event)
+    except TaskCancelledError:
+        print(f"[CANCEL] Task {request_id} cancelled mid-execution", flush=True)
+        return {
+            "ok": True,
+            "cancelled": True,
+            "request_id": request_id,
+            "message": "Task was cancelled during execution",
+        }
+    finally:
+        _cleanup_cancelled(request_id)
+
+
+def _handler_inner(data: Dict, request_id: str, event: Dict) -> Dict:
+    """Core handler logic, separated so that the outer handler can catch TaskCancelledError."""
 
     print(f"[DEBUG] Mode comparison: {data['mode']} == {WAN_EXTEND_ANY_FRAME_MODE}?", flush=True)
     if data["mode"] == WAN_EXTEND_ANY_FRAME_MODE:
@@ -2066,6 +2274,8 @@ def handler(event: Dict) -> Dict:
         if _wan_use_comfy_backend(data):
             try:
                 return _generate_wan_extend_any_frame_comfy(data, request_id, event=event)
+            except TaskCancelledError:
+                raise
             except Exception as exc:
                 raise RuntimeError(f"WAN comfy backend failed: {exc}") from exc
         return _generate_wan_extend_any_frame(data, request_id)
@@ -2090,8 +2300,13 @@ def handler(event: Dict) -> Dict:
     jpg_quality = int(data.get("jpg_quality", 85))
 
     validate_required_node_types(prompt)
+    _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
-    history_obj = wait_history(prompt_id, event=event)
+    _register_active_prompt(request_id, prompt_id)
+    try:
+        history_obj = wait_history(prompt_id, event=event, request_id=request_id)
+    finally:
+        _unregister_active_prompt(request_id)
     final_images, intermediate_images = collect_output_images(history_obj)
     if not final_images:
         return {

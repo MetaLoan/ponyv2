@@ -2,6 +2,8 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -60,6 +62,23 @@ def tail_comfy_log(lines: int = 120) -> str:
     return "\n".join(data[-lines:]) if data else "<empty /tmp/comfy.log>"
 
 
+def _tee_pipe_to_stdout_and_file(pipe, log_file) -> None:
+    """Read from a subprocess pipe line-by-line and write each line to both
+    sys.stdout (so RunPod dashboard captures it) and the log file on disk
+    (so wait_history / tail_logs can read it)."""
+    try:
+        for raw_line in iter(pipe.readline, b""):
+            text = raw_line.decode("utf-8", errors="replace")
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            log_file.write(text)
+            log_file.flush()
+    except Exception:
+        pass
+    finally:
+        pipe.close()
+
+
 def wait_comfy_ready(api_url: str, timeout_sec: int) -> None:
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
@@ -104,12 +123,21 @@ def start_comfy_if_needed() -> None:
 
     print(f"[entry] Starting ComfyUI: {comfy_cmd}")
     log = open(COMFY_LOG_PATH, "a", encoding="utf-8")
+
+    # Tee pattern: pipe ComfyUI's output through a daemon thread that writes
+    # to BOTH the log file AND sys.stdout (captured by RunPod's dashboard).
     proc = subprocess.Popen(
         shlex.split(comfy_cmd),
-        stdout=log,
-        stderr=log,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         cwd="/workspace/runpod-slim/ComfyUI",
     )
+    tee_thread = threading.Thread(
+        target=_tee_pipe_to_stdout_and_file,
+        args=(proc.stdout, log),
+        daemon=True,
+    )
+    tee_thread.start()
 
     try:
         wait_comfy_ready(api_url, boot_timeout)
@@ -147,3 +175,4 @@ if __name__ == "__main__":
         print(traceback.format_exc())
     start_comfy_if_needed()
     runpod.serverless.start({"handler": handler})
+

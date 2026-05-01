@@ -239,3 +239,119 @@ curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
 
 ### 5. 视频合并
 所有分段在 Worker 上通过 `ffmpeg` 拼接后上传，确保返回的 `final_video_url` 是一个完整、连续的 MP4 文件。
+
+---
+
+## 任务取消接口（`cancel_task`）
+
+使用 `cancel_task` 模式可以取消正在运行或排队中的任务。
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `mode` | string | **是** | 必须为 `"cancel_task"` |
+| `cancel_request_id` | string | **是** | 要取消的任务的 `request_id` |
+
+### 请求示例
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/run" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <YOUR_API_KEY>" \
+     -d '{
+  "input": {
+    "mode": "cancel_task",
+    "cancel_request_id": "abc123def456"
+  }
+}'
+```
+
+### 响应示例
+
+```json
+{
+  "ok": true,
+  "cancelled": true,
+  "cancel_request_id": "abc123def456",
+  "interrupt_sent": true
+}
+```
+
+### 行为说明
+
+1. **如果任务尚未开始执行**：任务被标记为已取消。当 Worker 轮到该任务时，会直接跳过，返回 `"message": "Task was cancelled before execution started"`。
+2. **如果任务正在 ComfyUI 工作流中执行**：系统会立即向 ComfyUI 发送 `/interrupt` 指令中断当前渲染，并从队列中删除该 prompt。被中断的任务返回 `"message": "Task was cancelled during execution"`。
+3. **如果任务在多段视频生成中**：每个分段生成前都会检查取消状态，确保已完成的段不会白费，但后续段不会继续执行。
+4. **取消操作是幂等的**：对同一个 `request_id` 多次发送取消请求不会产生副作用。
+5. **取消响应中的 `interrupt_sent` 字段**：当值为 `true` 时，表示成功向 ComfyUI 发送了中断指令（说明当时确实有对应任务在 GPU 上跑）；为 `false` 表示任务当时不在 GPU 上（可能在排队或已完成）。
+
+---
+
+## 实时日志查看接口（`tail_logs`）
+
+使用 `tail_logs` 模式可以远程查看 Worker 上 ComfyUI 的运行日志和系统状态，无需 SSH 进入容器。
+
+### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `mode` | string | **是** | 必须为 `"tail_logs"` |
+| `lines` | integer | 否 | 返回日志的行数，默认 200，最大 2000 |
+
+### 请求示例
+
+```bash
+curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/runsync" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <YOUR_API_KEY>" \
+     -d '{
+  "input": {
+    "mode": "tail_logs",
+    "lines": 100
+  }
+}'
+```
+
+### 响应示例
+
+```json
+{
+  "ok": true,
+  "mode": "tail_logs",
+  "log_lines": ["[ComfyUI] Loading model ...", "..."],
+  "log_total_lines": 5280,
+  "log_returned": 100,
+  "system_stats": {
+    "system": { "os": "posix", "python_version": "3.10.12" },
+    "devices": [{ "name": "NVIDIA RTX 4090", "vram_total": 25769803776, "vram_free": 18000000000 }]
+  },
+  "queue": {
+    "queue_running": 1,
+    "queue_pending": 0
+  },
+  "active_tasks": {
+    "abc123": "comfy-prompt-id-xyz"
+  },
+  "cancelled_count": 0,
+  "worker": {
+    "pod_id": "abc123def",
+    "gpu_id": "0",
+    "image_revision": "rpd-svls-sdxl-v0.2.117"
+  }
+}
+```
+
+### 返回字段说明
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `log_lines` | `/tmp/comfy.log` 的最后 N 行（数组） |
+| `log_total_lines` | 日志文件总行数 |
+| `system_stats` | ComfyUI 的 `/system_stats` 返回值，包含 GPU VRAM 使用情况 |
+| `queue` | ComfyUI 当前队列状态（正在运行和排队的任务数） |
+| `active_tasks` | 当前 Worker 上正在执行的 request_id → prompt_id 映射 |
+| `cancelled_count` | 当前 Worker 上被标记为取消的任务数 |
+| `worker` | Worker 环境信息（Pod ID、GPU ID、镜像版本号） |
+
+> **提示**：此接口为轻量级诊断调用，不占用 GPU 资源，不触发任何生成工作流。建议使用 `runsync`（同步）模式调用以立即获取结果。
