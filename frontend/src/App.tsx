@@ -204,6 +204,8 @@ function App() {
   const [payloadJsonText, setPayloadJsonText] = useState("");
   const [payloadImportError, setPayloadImportError] = useState("");
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
+  const isWanAnimateMode = mode === "wan2_2_animate";
+  const isWanExtractMode = mode === "wan2_2_dwpose_extract";
   const wanModelOptions = useMemo(() => {
     const source = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const pool = source.length > 0 ? source : (catalog.unets || []);
@@ -352,35 +354,42 @@ function App() {
       negative_prompt: negativePrompt,
       enable_lora: enableLora,
       loras: cleanLoras,
+      wan_loras: cleanLoras,
       async: true
     };
-    if (isWanMode) {
-      if (wanInputType === "image") {
-        body.startimg = mediaToPayloadValue(wanStartMedia);
+    if (isWanMode || isWanAnimateMode) {
+      if (isWanMode) {
+        if (wanInputType === "image") {
+          body.startimg = mediaToPayloadValue(wanStartMedia);
+        } else {
+          body.startvideo = mediaToPayloadValue(wanStartVideoMedia);
+        }
+        body.frames = frames;
+        body.segment_limit = wanSegmentFrames;
+        body.auto_segment_prompts = autoSegmentPrompts;
+        const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
+        body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
+        body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
+        if (enableWanFaceSwap) {
+          body.wan_face_swap = true;
+          body.face_image = mediaToPayloadValue(wanFaceMedia);
+          body.wan_face_swap_prompt = wanFaceSwapPrompt;
+        }
+        body.base_cfg = baseCfg;
+        body.base_steps = baseSteps;
       } else {
-        body.startvideo = mediaToPayloadValue(wanStartVideoMedia);
+        // isWanAnimateMode
+        // Backend handles 480P/720P strings automatically
       }
-      body.frames = frames;
       body.wan_unet_high_name = wanUnetHighName;
       body.wan_unet_low_name = wanUnetLowName;
       body.wan_vae_name = wanVaeName;
       body.wan_clip_vision_name = wanClipVisionName;
       body.wan_clip_name = wanClipName;
       body.i2v_resolution = i2vResolution;
-      body.base_steps = baseSteps;
       body.steps = steps;
-      body.base_cfg = baseCfg;
+      body.seed = seed;
       body.cfg = cfg;
-      body.segment_limit = wanSegmentFrames;
-      body.auto_segment_prompts = autoSegmentPrompts;
-      const computedSegmentCount = Math.max(1, Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)));
-      body.wan_seeds = Array.from({ length: computedSegmentCount }).map((_, idx) => wanSeeds[idx] ?? seed + idx);
-      body.wan_prompts = Array.from({ length: computedSegmentCount }).map((_, idx) => wanPrompts[idx] || "");
-      if (enableWanFaceSwap) {
-        body.wan_face_swap = true;
-        body.face_image = mediaToPayloadValue(wanFaceMedia);
-        body.wan_face_swap_prompt = wanFaceSwapPrompt;
-      }
     } else {
       body.width = width;
       body.height = height;
@@ -569,17 +578,22 @@ function App() {
         body.pose_image = await resolveMedia(poseMedia);
       }
       
-    if (mode === "wan2_2_dwpose_extract") {
-      body.video_url = await resolveMedia(actionVideoMedia);
-    }
-    if (mode === "wan2_2_animate") {
-      body.pose_video_url = await resolveMedia(poseMedia);
-      body.face_video_url = await resolveMedia(faceMedia);
-      body.character_image_url = await resolveMedia(referenceMedia);
-      body.prompt = prompt;
-      body.width = parseInt(i2vResolution.split("*")[0]);
-      body.height = parseInt(i2vResolution.split("*")[1]);
-    }
+      if (mode === "wan2_2_dwpose_extract") {
+        if (!actionVideoMedia.file && !actionVideoMedia.url.trim()) {
+          throw new Error("Please upload an Action Video first.");
+        }
+        body.video_url = await resolveMedia(actionVideoMedia);
+      }
+      if (mode === "wan2_2_animate") {
+        if (!poseMedia.file && !poseMedia.url.trim()) throw new Error("Missing Pose Video (Skeleton)");
+        if (!faceMedia.file && !faceMedia.url.trim()) throw new Error("Missing Face Video");
+        if (!referenceMedia.file && !referenceMedia.url.trim()) throw new Error("Missing Character Image");
+        
+        body.pose_video_url = await resolveMedia(poseMedia);
+        body.face_video_url = await resolveMedia(faceMedia);
+        body.character_image_url = await resolveMedia(referenceMedia);
+        body.prompt = prompt;
+      }
 
       if (mode === "wan2_2_i2v_extend_any_frame") {
         if (wanInputType === "image") {
@@ -1028,8 +1042,7 @@ function App() {
           />
         )}
 
-        
-        {(mode === "wan2_2_dwpose_extract") && (
+        {mode === "wan2_2_dwpose_extract" && (
           <MediaCard
             title="Action Video (MP4)"
             media={actionVideoMedia}
@@ -1041,7 +1054,7 @@ function App() {
               }
             }}
             onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
-            
+            accept="video/*"
           />
         )}
 
@@ -1058,6 +1071,7 @@ function App() {
                 }
               }}
               onURLChange={(value) => setPoseMedia(prev => ({ ...prev, url: value }))}
+              accept="video/*"
             />
             <MediaCard
               title="Face Crop Video (MP4)"
@@ -1070,6 +1084,7 @@ function App() {
                 }
               }}
               onURLChange={(value) => setFaceMedia(prev => ({ ...prev, url: value }))}
+              accept="video/*"
             />
           </>
         )}
@@ -1122,52 +1137,7 @@ function App() {
             onURLChange={(value) => onURLChange("pose", value)}
           />
         )}
-
         
-        {(mode === "wan2_2_dwpose_extract") && (
-          <MediaCard
-            title="Action Video (MP4)"
-            media={actionVideoMedia}
-            onKindChange={(kind) => setActionVideoMedia(prev => ({ ...prev, kind }))}
-            onFileChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                const file = e.target.files[0];
-                setActionVideoMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
-              }
-            }}
-            onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
-            
-          />
-        )}
-
-        {mode === "wan2_2_animate" && (
-          <>
-            <MediaCard
-              title="Pose Stickman Video (MP4)"
-              media={poseMedia}
-              onKindChange={(kind) => setPoseMedia(prev => ({ ...prev, kind }))}
-              onFileChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  const file = e.target.files[0];
-                  setPoseMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
-                }
-              }}
-              onURLChange={(value) => setPoseMedia(prev => ({ ...prev, url: value }))}
-            />
-            <MediaCard
-              title="Face Crop Video (MP4)"
-              media={faceMedia}
-              onKindChange={(kind) => setFaceMedia(prev => ({ ...prev, kind }))}
-              onFileChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  const file = e.target.files[0];
-                  setFaceMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
-                }
-              }}
-              onURLChange={(value) => setFaceMedia(prev => ({ ...prev, url: value }))}
-            />
-          </>
-        )}
         {mode === "qwen_pose_fusion" && (
           <MediaCard
             title="Qwen Pose Image"
@@ -1238,125 +1208,149 @@ function App() {
       </aside>
 
       <main className="main">
-        <section className="card">
-          <h2>{mode === "qwen_pose_fusion" ? "Qwen Pose Fusion Prompt" : mode === "wan2_2_i2v_extend_any_frame" ? "Wan Video Prompt" : "Prompt"}</h2>
-          {mode === "qwen_pose_fusion" ? (
-            <textarea rows={4} value={qwenPoseFusionPrompt} onChange={(e) => setQwenPoseFusionPrompt(e.target.value)} />
-          ) : mode === "wan2_2_i2v_extend_any_frame" ? (
-            <div className="stack">
-              <textarea rows={4} value={wanExtendPrompt} onChange={(e) => setWanExtendPrompt(e.target.value)} />
-              <div className="inline">
-                <NumberField label="Total Duration (Seconds)" value={Math.floor((frames - 1) / 16)} onChange={(v) => setFrames(Math.max(1, v) * 16 + 1)} min={1} max={60} step={1} />
-                <NumberField label="Total Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
-              </div>
-              <div className="inline" style={{ marginTop: "0.5rem" }}>
-                <NumberField label="Segment Duration (Sec)" value={Math.floor((wanSegmentFrames - 1) / 16)} onChange={(v) => setWanSegmentFrames(Math.max(1, v) * 16 + 1)} min={1} max={30} step={1} />
-                <label>
-                  Resolution / Ratio
-                  <select 
-                    value={wanInputType === "video" ? "same_as_video" : i2vResolution} 
-                    onChange={(e) => setI2VResolution(e.target.value)}
-                    disabled={wanInputType === "video"}
-                  >
-                    {wanInputType === "video" ? (
-                      <option value="same_as_video">和原视频一致</option>
-                    ) : (
-                      <>
-                        <option value="480P">480P (Standard)</option>
-                        <option value="720P">720P (High Quality)</option>
-                        <option value="1080P">1080P (Ultra HD)</option>
-                      </>
-                    )}
-                  </select>
-                </label>
-              </div>
-              {frames > wanSegmentFrames && (
-                <div className="stack" style={{ marginTop: "1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h4 style={{ margin: "0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.8rem", cursor: "pointer" }}>
-                        <input type="checkbox" checked={autoSegmentPrompts} onChange={(e) => setAutoSegmentPrompts(e.target.checked)} />
-                        Auto-Generate Segment Prompts
-                      </label>
-                      <button 
-                        onClick={handleAiSplit} 
-                        disabled={isAiSplitting}
-                        style={{ padding: "4px 12px", fontSize: "0.8rem", cursor: "pointer", background: "linear-gradient(45deg, #8a2be2, #4b0082)", border: "none", color: "white", borderRadius: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-                      >
-                        {isAiSplitting ? "✨ Orchestrating..." : "✨ AI Auto-Script (Manual)"}
-                      </button>
+        {!isWanExtractMode && (
+          <section className="card">
+            <h2>{mode === "qwen_pose_fusion" ? "Qwen Pose Fusion Prompt" : mode === "wan2_2_i2v_extend_any_frame" ? "Wan Video Prompt" : "Prompt"}</h2>
+            {mode === "qwen_pose_fusion" ? (
+              <textarea rows={4} value={qwenPoseFusionPrompt} onChange={(e) => setQwenPoseFusionPrompt(e.target.value)} />
+            ) : mode === "wan2_2_i2v_extend_any_frame" ? (
+              <div className="stack">
+                <textarea rows={4} value={wanExtendPrompt} onChange={(e) => setWanExtendPrompt(e.target.value)} />
+                <div className="inline">
+                  <NumberField label="Total Duration (Seconds)" value={Math.floor((frames - 1) / 16)} onChange={(v) => setFrames(Math.max(1, v) * 16 + 1)} min={1} max={60} step={1} />
+                  <NumberField label="Total Frames" value={frames} onChange={setFrames} min={1} max={999999} step={1} />
+                </div>
+                <div className="inline" style={{ marginTop: "0.5rem" }}>
+                  <NumberField label="Segment Duration (Sec)" value={Math.floor((wanSegmentFrames - 1) / 16)} onChange={(v) => setWanSegmentFrames(Math.max(1, v) * 16 + 1)} min={1} max={30} step={1} />
+                  <label>
+                    Resolution / Ratio
+                    <select 
+                      value={wanInputType === "video" ? "same_as_video" : i2vResolution} 
+                      onChange={(e) => setI2VResolution(e.target.value)}
+                      disabled={wanInputType === "video"}
+                    >
+                      {wanInputType === "video" ? (
+                        <option value="same_as_video">和原视频一致</option>
+                      ) : (
+                        <>
+                          <option value="480P">480P (Standard)</option>
+                          <option value="720P">720P (High Quality)</option>
+                          <option value="1080P">1080P (Ultra HD)</option>
+                        </>
+                      )}
+                    </select>
+                  </label>
+                </div>
+                {frames > wanSegmentFrames && (
+                  <div className="stack" style={{ marginTop: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <h4 style={{ margin: "0", fontSize: "0.9rem", opacity: 0.8 }}>Segment Configuration</h4>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.8rem", cursor: "pointer" }}>
+                          <input type="checkbox" checked={autoSegmentPrompts} onChange={(e) => setAutoSegmentPrompts(e.target.checked)} />
+                          Auto-Generate Segment Prompts
+                        </label>
+                        <button 
+                          onClick={handleAiSplit} 
+                          disabled={isAiSplitting}
+                          style={{ padding: "4px 12px", fontSize: "0.8rem", cursor: "pointer", background: "linear-gradient(45deg, #8a2be2, #4b0082)", border: "none", color: "white", borderRadius: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+                        >
+                          {isAiSplitting ? "✨ Orchestrating..." : "✨ AI Auto-Script (Manual)"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="stack" style={{ gap: '1rem' }}>
+                      {Array.from({ length: Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)) }).map((_, idx) => (
+                        <div key={idx} style={{ padding: "0.5rem", border: "1px solid #444", borderRadius: "4px" }}>
+                          <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>Segment {idx + 1}</div>
+                          <NumberField 
+                            label="Seed" 
+                            value={wanSeeds[idx] ?? seed + idx} 
+                            onChange={(v) => {
+                              const newSeeds = [...wanSeeds];
+                              newSeeds[idx] = v;
+                              setWanSeeds(newSeeds);
+                            }} 
+                            min={0} max={9999999999999999} step={1} 
+                          />
+                          <div style={{ marginTop: "0.5rem" }}>
+                            <label style={{ display: "block", fontSize: "0.8rem", marginBottom: "0.2rem" }}>Segment Prompt (Leave blank to use main)</label>
+                            <textarea 
+                              rows={2} 
+                              value={wanPrompts[idx] || ""} 
+                              onChange={(e) => {
+                                const newPrompts = [...wanPrompts];
+                                newPrompts[idx] = e.target.value;
+                                setWanPrompts(newPrompts);
+                              }} 
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="stack" style={{ gap: '1rem' }}>
-                    {Array.from({ length: Math.ceil((frames - 1) / Math.max(1, wanSegmentFrames - 1)) }).map((_, idx) => (
-                      <div key={idx} style={{ padding: "0.5rem", border: "1px solid #444", borderRadius: "4px" }}>
-                        <div style={{ marginBottom: "0.5rem", fontWeight: "bold" }}>Segment {idx + 1}</div>
-                        <NumberField 
-                          label="Seed" 
-                          value={wanSeeds[idx] ?? seed + idx} 
-                          onChange={(v) => {
-                            const newSeeds = [...wanSeeds];
-                            newSeeds[idx] = v;
-                            setWanSeeds(newSeeds);
-                          }} 
-                          min={0} max={9999999999999999} step={1} 
-                        />
-                        <div style={{ marginTop: "0.5rem" }}>
-                          <label style={{ display: "block", fontSize: "0.8rem", marginBottom: "0.2rem" }}>Segment Prompt (Leave blank to use main)</label>
-                          <textarea 
-                            rows={2} 
-                            value={wanPrompts[idx] || ""} 
-                            onChange={(e) => {
-                              const newPrompts = [...wanPrompts];
-                              newPrompts[idx] = e.target.value;
-                              setWanPrompts(newPrompts);
-                            }} 
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-          )}
-          <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />
-          {mode === "qwen_swap_face" && (
-            <div className="stack">
-              <label>
-                Qwen Swap Prompt
-                <textarea rows={4} value={qwenSwapPrompt} onChange={(e) => setQwenSwapPrompt(e.target.value)} />
-              </label>
-              <label>
-                Qwen Model
-                <input value={qwenModel} onChange={(e) => setQwenModel(e.target.value)} />
-              </label>
-              <label>
-                Qwen Size
-                <input placeholder="1024*1536" value={qwenSize} onChange={(e) => setQwenSize(e.target.value)} />
-              </label>
-            </div>
-          )}
-        </section>
+                )}
+              </div>
+            ) : (
+              <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+            )}
+            {!isWanAnimateMode && <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />}
+            {mode === "qwen_swap_face" && (
+              <div className="stack">
+                <label>
+                  Qwen Swap Prompt
+                  <textarea rows={4} value={qwenSwapPrompt} onChange={(e) => setQwenSwapPrompt(e.target.value)} />
+                </label>
+                <label>
+                  Qwen Model
+                  <input value={qwenModel} onChange={(e) => setQwenModel(e.target.value)} />
+                </label>
+                <label>
+                  Qwen Size
+                  <input placeholder="1024*1536" value={qwenSize} onChange={(e) => setQwenSize(e.target.value)} />
+                </label>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="grid two">
-          {isWanMode ? (
-            <section className="card">
-              <h2>WAN Preset</h2>
+        {isWanAnimateMode && (
+          <section className="card">
+            <h2>Animation Generation Params</h2>
+            <div className="inline">
+              <NumberField label="Seed" value={seed} onChange={setSeed} min={0} max={9999999999999999} step={1} />
+              <NumberField label="Steps" value={steps} onChange={setSteps} min={1} max={100} step={1} />
+            </div>
+            <div className="inline">
               <label>
-                Preset
-                <select value={wanPreset} onChange={(e) => applyWanPreset(e.target.value as WanPreset)}>
-                  <option value="manual">Manual</option>
-                  <option value="realistic_video">Realistic Video</option>
-                  <option value="anime_video">Anime Video</option>
+                Resolution
+                <select value={i2vResolution} onChange={(e) => setI2VResolution(e.target.value)}>
+                   <option value="480P">480P (Standard)</option>
+                   <option value="720P">720P (High Quality)</option>
                 </select>
               </label>
-              <p className="muted compact">
-                Realistic keeps the stack minimal. Anime tries to prefill installed style LoRAs and a stylized prompt.
-              </p>
+            </div>
+          </section>
+        )}
+          {(isWanMode || isWanAnimateMode) && !isWanExtractMode ? (
+            <section className="card">
+              {isWanMode && (
+                <>
+                  <h2>WAN Preset</h2>
+                  <label>
+                    Preset
+                    <select value={wanPreset} onChange={(e) => applyWanPreset(e.target.value as WanPreset)}>
+                      <option value="manual">Manual</option>
+                      <option value="realistic_video">Realistic Video</option>
+                      <option value="anime_video">Anime Video</option>
+                    </select>
+                  </label>
+                  <p className="muted compact">
+                    Realistic keeps the stack minimal. Anime tries to prefill installed style LoRAs and a stylized prompt.
+                  </p>
+                </>
+              )}
               <div className="subcard">
                 <h3 style={{ marginTop: 0 }}>WAN Main Models</h3>
                 <p className="muted compact">
@@ -1384,9 +1378,6 @@ function App() {
                     </select>
                   </label>
                 </div>
-                <p className="muted compact">
-                  Active pair: {wanUnetHighName || "(unset)"} / {wanUnetLowName || "(unset)"}
-                </p>
               </div>
               <h2>WAN LoRA Chain</h2>
               <label className="toggle">
@@ -1433,9 +1424,6 @@ function App() {
               <details className="subcard" open={wanAdvancedOpen} onToggle={(e) => setWanAdvancedOpen(e.currentTarget.open)}>
                 <summary style={{ cursor: "pointer", fontWeight: 600 }}>WAN Advanced</summary>
                 <div className="stack" style={{ marginTop: 12 }}>
-                  <p className="muted compact">
-                    Low-level video controls and runtime model names. Leave these alone unless you know the WAN workflow expects a different setting.
-                  </p>
                   <div className="inline">
                     <label>
                       WAN VAE
@@ -1468,19 +1456,22 @@ function App() {
                       ))}
                     </select>
                   </label>
-                  <div className="inline">
-                    <NumberField label="High Noise Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={50} step={1} />
-                    <NumberField label="Low Noise Steps" value={steps} onChange={setSteps} min={1} max={50} step={1} />
-                  </div>
-                  <div className="inline">
-                    <NumberField label="High Noise CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
-                    <NumberField label="Low Noise CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
-                  </div>
-
+                  {isWanMode && (
+                    <>
+                      <div className="inline">
+                        <NumberField label="High Noise Steps" value={baseSteps} onChange={setBaseSteps} min={1} max={50} step={1} />
+                        <NumberField label="Low Noise Steps" value={steps} onChange={setSteps} min={1} max={50} step={1} />
+                      </div>
+                      <div className="inline">
+                        <NumberField label="High Noise CFG" value={baseCfg} onChange={setBaseCfg} min={1} max={20} step={0.5} />
+                        <NumberField label="Low Noise CFG" value={cfg} onChange={setCfg} min={1} max={20} step={0.5} />
+                      </div>
+                    </>
+                  )}
                 </div>
               </details>
             </section>
-          ) : (
+          ) : !isWanExtractMode && !isWanAnimateMode ? (
             <section className="card">
               <h2>Model Selection</h2>
               <label>
@@ -1551,7 +1542,7 @@ function App() {
                 </label>
               )}
             </section>
-          )}
+          ) : null}
 
           {isWanMode && (
             <section className="card">
@@ -1620,7 +1611,7 @@ function App() {
         </section>
 
         <section className="grid two">
-          {!isWanMode && (
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && (
             <section className="card">
               <h2>Output</h2>
               <div className="inline">
@@ -1640,14 +1631,14 @@ function App() {
             </section>
           )}
 
-          {isWanMode ? (
+          {(isWanMode && !isWanAnimateMode && !isWanExtractMode) ? (
             <section className="card">
               <h2>WAN Workflow</h2>
               <p className="muted compact">
                 Core inputs stay above. Advanced video controls are hidden in the WAN Advanced panel.
               </p>
             </section>
-          ) : (
+          ) : (!isWanMode && !isWanAnimateMode && !isWanExtractMode) ? (
             <section className="card">
               <h2>I2V Postprocess</h2>
               <label className="toggle">
@@ -1701,9 +1692,10 @@ function App() {
                 </div>
               </div>
             </section>
-          )}
+          ) : null}
 
-          {!isWanMode && (
+
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && (
             <section className="card">
               <h2>PuLID</h2>
               <label className="toggle">
@@ -1727,7 +1719,7 @@ function App() {
             </section>
           )}
 
-          {!isWanMode &&
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode &&
             mode !== "text_only" &&
             mode !== "qwen_swap_face" &&
             mode !== "qwen_pose_fusion" &&
@@ -1753,9 +1745,11 @@ function App() {
         <section className="card">
           <h2>Actions</h2>
           <div className="inline actions">
-            <button type="button" disabled={busy !== ""} onClick={onRenderWorkflow}>
-              {busy === "render" ? "Rendering..." : "Preview Workflow"}
-            </button>
+            {!isWanExtractMode && (
+              <button type="button" disabled={busy !== ""} onClick={onRenderWorkflow}>
+                {busy === "render" ? "Rendering..." : "Preview Workflow"}
+              </button>
+            )}
             <button type="button" disabled={busy !== ""} onClick={onGenerate}>
               {busy === "generate" ? "Generating..." : "Generate"}
             </button>
@@ -1763,42 +1757,44 @@ function App() {
           {error && <pre className="errorBox">{error}</pre>}
         </section>
 
-        <section className="grid two">
-          <section className="card">
-            <h2>Import Payload</h2>
-            <textarea
-              rows={10}
-              value={payloadJsonText}
-              onChange={(e) => setPayloadJsonText(e.target.value)}
-              placeholder='Paste request JSON here, then click "Load JSON into form".'
-            />
-            <div className="inline actions">
-              <button type="button" disabled={!payloadJsonText.trim()} onClick={loadPayloadFromJson}>
-                Load JSON into form
-              </button>
-              <button type="button" className="ghost" onClick={() => setPayloadJsonText("")}>
-                Clear
-              </button>
-            </div>
-            {payloadImportError && <pre className="errorBox">{payloadImportError}</pre>}
+        {!isWanAnimateMode && !isWanExtractMode && (
+          <section className="grid two">
+            <section className="card">
+              <h2>Import Payload</h2>
+              <textarea
+                rows={10}
+                value={payloadJsonText}
+                onChange={(e) => setPayloadJsonText(e.target.value)}
+                placeholder='Paste request JSON here, then click "Load JSON into form".'
+              />
+              <div className="inline actions">
+                <button type="button" disabled={!payloadJsonText.trim()} onClick={loadPayloadFromJson}>
+                  Load JSON into form
+                </button>
+                <button type="button" className="ghost" onClick={() => setPayloadJsonText("")}>
+                  Clear
+                </button>
+              </div>
+              {payloadImportError && <pre className="errorBox">{payloadImportError}</pre>}
+            </section>
+            <section className="card">
+              <h2>Payload Preview</h2>
+              <div className="toolbar">
+                <button type="button" className="ghost" onClick={() => void copyText(JSON.stringify(payload, null, 2))}>
+                  Copy Payload
+                </button>
+                <button type="button" className="ghost" onClick={saveDefaultPayload}>
+                  Save to default payload
+                </button>
+              </div>
+              <pre>{JSON.stringify(payload, null, 2)}</pre>
+            </section>
+            <section className="card">
+              <h2>Workflow Preview</h2>
+              <pre>{renderResult ? JSON.stringify(renderResult, null, 2) : "No workflow preview yet."}</pre>
+            </section>
           </section>
-          <section className="card">
-            <h2>Payload Preview</h2>
-            <div className="toolbar">
-              <button type="button" className="ghost" onClick={() => void copyText(JSON.stringify(payload, null, 2))}>
-                Copy Payload
-              </button>
-              <button type="button" className="ghost" onClick={saveDefaultPayload}>
-                Save to default payload
-              </button>
-            </div>
-            <pre>{JSON.stringify(payload, null, 2)}</pre>
-          </section>
-          <section className="card">
-            <h2>Workflow Preview</h2>
-            <pre>{renderResult ? JSON.stringify(renderResult, null, 2) : "No workflow preview yet."}</pre>
-          </section>
-        </section>
+        )}
 
         <section className="card">
           <h2>Generation Result</h2>
@@ -1976,15 +1972,14 @@ async function resolveMedia(media: MediaState): Promise<string> {
     return media.url.trim();
   }
   if (!media.file) {
-    throw new Error("Missing required image input.");
+    throw new Error("Missing required media input.");
   }
-  const arrayBuffer = await media.file.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(arrayBuffer);
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(media.file as File);
+  });
 }
 
 async function resolveOptionalMedia(media: MediaState): Promise<string | undefined> {

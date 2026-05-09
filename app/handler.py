@@ -1779,22 +1779,84 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if not char_img:
         raise ValueError("character_image_url is required")
         
-    width = int(data.get("width", 720))
-    height = int(data.get("height", 1280))
+    res_str = str(data.get("i2v_resolution", "")).strip().upper()
+    width = 0
+    height = 0
+    if "*" in res_str:
+        try:
+            parts = res_str.split("*")
+            width = int(parts[0])
+            height = int(parts[1])
+        except Exception:
+            pass
+    if not width or not height:
+        if "480" in res_str:
+            width, height = 480, 832
+        elif "720" in res_str:
+            width, height = 720, 1280
+        else:
+            width = int(data.get("width", 720))
+            height = int(data.get("height", 1280))
     
-    prompt["301"]["inputs"]["video"] = resolve_media_to_comfy_filename(pose_url, "pose_video")
-    prompt["302"]["inputs"]["video"] = resolve_media_to_comfy_filename(face_url, "face_video")
-    prompt["55"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
-    prompt["122"]["inputs"]["text"] = data.get("prompt", "这个角色在跳舞")
-    prompt["81"]["inputs"]["filename_prefix"] = f"wan_animate_{request_id}"
+    if "301" in prompt:
+        prompt["301"]["inputs"]["video"] = resolve_media_to_comfy_filename(pose_url, "pose_video")
+    if "302" in prompt:
+        prompt["302"]["inputs"]["video"] = resolve_media_to_comfy_filename(face_url, "face_video")
+    if "55" in prompt:
+        prompt["55"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
+    if "122" in prompt:
+        prompt["122"]["inputs"]["text"] = data.get("prompt", "这个角色在跳舞")
+    if "81" in prompt:
+        prompt["81"]["inputs"]["filename_prefix"] = f"wan_animate_{request_id}"
     
     # Resolution
-    prompt["14"]["inputs"]["image_gen_width"] = width
-    prompt["14"]["inputs"]["image_gen_height"] = height
-    prompt["39"]["inputs"]["width"] = width
-    prompt["39"]["inputs"]["height"] = height
-    prompt["84"]["inputs"]["width"] = width
-    prompt["84"]["inputs"]["height"] = height
+    if "39" in prompt:
+        prompt["39"]["inputs"]["width"] = width
+        prompt["39"]["inputs"]["height"] = height
+    if "84" in prompt:
+        prompt["84"]["inputs"]["width"] = width
+        prompt["84"]["inputs"]["height"] = height
+    # Node 14 is optional or from a different workflow version
+    if "14" in prompt:
+        if "image_gen_width" in prompt["14"]["inputs"]:
+            prompt["14"]["inputs"]["image_gen_width"] = width
+        if "image_gen_height" in prompt["14"]["inputs"]:
+            prompt["14"]["inputs"]["image_gen_height"] = height
+
+    # Sampler Params
+    sampler_id = "70"
+    if sampler_id in prompt:
+        if "seed" in data:
+            prompt[sampler_id]["inputs"]["seed"] = int(data["seed"])
+        if "steps" in data:
+            prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
+    
+    if "132" in prompt: # Some workflows use this for steps
+        if "steps" in data:
+            prompt["132"]["inputs"]["steps"] = int(data["steps"])
+        if "84" in prompt: # If it's a sampler node
+             pass 
+    
+    # Models
+    if data.get("wan_unet_high_name"):
+        prompt["94"]["inputs"]["model"] = data["wan_unet_high_name"]
+    if data.get("wan_vae_name"):
+        prompt["60"]["inputs"]["model_name"] = data["wan_vae_name"]
+    if data.get("wan_clip_vision_name"):
+        prompt["86"]["inputs"]["clip_name"] = data["wan_clip_vision_name"]
+        
+    # LoRAs
+    loras = data.get("wan_loras", [])
+    if loras:
+        for i in range(5):
+            l_key = f"lora_{i}"
+            s_key = f"strength_{i}"
+            if i < len(loras):
+                prompt["121"]["inputs"][l_key] = loras[i]["name"]
+                prompt["121"]["inputs"][s_key] = loras[i]["strength_model"]
+            else:
+                prompt["121"]["inputs"][l_key] = "none"
+                prompt["121"]["inputs"][s_key] = 0
     
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
