@@ -140,6 +140,7 @@ type GenerateRequest struct {
 	PoseVideoURL        string       `json:"pose_video_url"`
 	FaceVideoURL        string       `json:"face_video_url"`
 	CharacterImageURL   string       `json:"character_image_url"`
+	VideoURL            string       `json:"video_url"`
 }
 
 type LoraConfig struct {
@@ -1102,6 +1103,7 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"character_image_url":   req.CharacterImageURL,
 		"pose_video_url":        req.PoseVideoURL,
 		"face_video_url":        req.FaceVideoURL,
+		"video_url":             req.VideoURL,
 		"enable_pulid":           req.EnablePulid != nil && *req.EnablePulid,
 		"pulid_weight":           req.PulidWeight,
 		"pulid_start_at":         req.PulidStartAt,
