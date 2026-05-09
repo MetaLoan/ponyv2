@@ -1,0 +1,401 @@
+{
+  "14": {
+    "inputs": {
+      "image_gen_width": [
+        "74",
+        0
+      ],
+      "image_gen_height": [
+        "73",
+        0
+      ],
+      "resize_mode": "Just Resize",
+      "original_image": [
+        "72",
+        0
+      ]
+    },
+    "class_type": "PixelPerfectResolution",
+    "_meta": {
+      "title": "Pixel Perfect Resolution"
+    }
+  },
+  "16": {
+    "inputs": {
+      "UNKNOWN": 0,
+      "pose_kps": [
+        "33",
+        1
+      ]
+    },
+    "_meta": {}
+  },
+  "26": {
+    "inputs": {
+      "UNKNOWN": "default",
+      "vae": [
+        "60",
+        0
+      ],
+      "samples": [
+        "70",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "30": {
+    "inputs": {
+      "model": [
+        "31",
+        0
+      ],
+      "block_swap_args": [
+        "57",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "31": {
+    "inputs": {
+      "model": [
+        "94",
+        0
+      ],
+      "lora": [
+        "121",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "33": {
+    "inputs": {
+      "UNKNOWN": "disable",
+      "image": [
+        "72",
+        0
+      ],
+      "resolution": [
+        "14",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "39": {
+    "inputs": {
+      "width": [
+        "74",
+        0
+      ],
+      "height": [
+        "73",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "pad_edge_pixel",
+      "pad_color": "0, 0, 0",
+      "crop_position": "top",
+      "divisible_by": 16,
+      "device": "cpu",
+      "image": [
+        "55",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "55": {
+    "inputs": {
+      "image": "1a60c20e40f06b4956070171c5d239d9db3976eeb887f545dfab5f9b37ca96d6.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "上传一张图片"
+    }
+  },
+  "57": {
+    "inputs": {
+      "UNKNOWN": false
+    },
+    "_meta": {}
+  },
+  "60": {
+    "inputs": {
+      "UNKNOWN": false
+    },
+    "_meta": {}
+  },
+  "61": {
+    "inputs": {
+      "UNKNOWN": "gpu",
+      "positive_prompt": [
+        "122",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "63": {
+    "inputs": {
+      "base_resolution": 512,
+      "padding": 32,
+      "min_crop_resolution": 128,
+      "max_crop_resolution": 512,
+      "image": [
+        "72",
+        0
+      ],
+      "mask": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "ImageCropByMaskAndResize",
+    "_meta": {
+      "title": "Image Crop By Mask And Resize"
+    }
+  },
+  "70": {
+    "inputs": {
+      "UNKNOWN": false,
+      "model": [
+        "30",
+        0
+      ],
+      "image_embeds": [
+        "84",
+        0
+      ],
+      "text_embeds": [
+        "61",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "72": {
+    "inputs": {
+      "force_rate": [
+        "115",
+        1
+      ],
+      "custom_width": [
+        "74",
+        0
+      ],
+      "custom_height": [
+        "73",
+        0
+      ],
+      "frame_load_cap": [
+        "113",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "上传参考视频"
+    }
+  },
+  "73": {
+    "inputs": {
+      "UNKNOWN": 1280
+    },
+    "_meta": {
+      "title": "高度"
+    }
+  },
+  "74": {
+    "inputs": {
+      "UNKNOWN": 720
+    },
+    "_meta": {
+      "title": "宽度"
+    }
+  },
+  "81": {
+    "inputs": {
+      "images": [
+        "26",
+        0
+      ],
+      "audio": [
+        "72",
+        2
+      ],
+      "frame_rate": [
+        "115",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "保存视频"
+    }
+  },
+  "84": {
+    "inputs": {
+      "UNKNOWN": false,
+      "vae": [
+        "60",
+        0
+      ],
+      "clip_embeds": [
+        "85",
+        0
+      ],
+      "ref_images": [
+        "39",
+        0
+      ],
+      "pose_images": [
+        "33",
+        0
+      ],
+      "face_images": [
+        "63",
+        0
+      ],
+      "width": [
+        "74",
+        0
+      ],
+      "height": [
+        "73",
+        0
+      ],
+      "num_frames": [
+        "72",
+        1
+      ]
+    },
+    "_meta": {}
+  },
+  "85": {
+    "inputs": {
+      "UNKNOWN": 0.5,
+      "clip_vision": [
+        "86",
+        0
+      ],
+      "image_1": [
+        "39",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "86": {
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "加载CLIP视觉"
+    }
+  },
+  "87": {
+    "inputs": {
+      "anything": [
+        "26",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "89": {
+    "inputs": {
+      "UNKNOWN": true,
+      "anything": [
+        "94",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "90": {
+    "inputs": {
+      "UNKNOWN": true,
+      "anything": [
+        "33",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "91": {
+    "inputs": {
+      "UNKNOWN": true,
+      "anything": [
+        "61",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "92": {
+    "inputs": {
+      "UNKNOWN": true,
+      "anything": [
+        "31",
+        0
+      ]
+    },
+    "_meta": {}
+  },
+  "94": {
+    "inputs": {
+      "UNKNOWN": "default"
+    },
+    "_meta": {}
+  },
+  "113": {
+    "inputs": {
+      "UNKNOWN": "a*b+1",
+      "a": [
+        "120",
+        0
+      ],
+      "b": [
+        "115",
+        1
+      ]
+    },
+    "_meta": {}
+  },
+  "115": {
+    "inputs": {
+      "UNKNOWN": 30.000000000000007
+    },
+    "_meta": {
+      "title": "帧率"
+    }
+  },
+  "120": {
+    "inputs": {
+      "value": 11
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "时长"
+    }
+  },
+  "121": {
+    "inputs": {
+      "UNKNOWN": false
+    },
+    "_meta": {}
+  },
+  "122": {
+    "inputs": {
+      "UNKNOWN": "这个角色在跳舞"
+    },
+    "_meta": {
+      "title": "简单咒语"
+    }
+  }
+}

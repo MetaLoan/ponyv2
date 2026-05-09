@@ -1,0 +1,173 @@
+{
+  "14": {
+    "inputs": {
+      "image_gen_width": 720,
+      "image_gen_height": 1280,
+      "resize_mode": "Just Resize",
+      "original_image": [
+        "72",
+        0
+      ]
+    },
+    "class_type": "PixelPerfectResolution",
+    "_meta": {
+      "title": "Pixel Perfect Resolution"
+    }
+  },
+  "16": {
+    "inputs": {
+      "person_index": 0,
+      "pose_kps": [
+        "33",
+        1
+      ]
+    },
+    "class_type": "FaceMaskFromPoseKeypoints",
+    "_meta": {
+      "title": "Face Mask From Pose Keypoints"
+    }
+  },
+  "33": {
+    "inputs": {
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": [
+        "14",
+        0
+      ],
+      "bbox_detector": "yolox_l.torchscript.pt",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+      "scale_stick_for_xinsr_cn": "disable",
+      "image": [
+        "72",
+        0
+      ]
+    },
+    "class_type": "DWPreprocessor",
+    "_meta": {
+      "title": "DWPose Estimator"
+    }
+  },
+  "63": {
+    "inputs": {
+      "base_resolution": 512,
+      "padding": 32,
+      "min_crop_resolution": 128,
+      "max_crop_resolution": 512,
+      "image": [
+        "72",
+        0
+      ],
+      "mask": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "ImageCropByMaskAndResize",
+    "_meta": {
+      "title": "Image Crop By Mask And Resize"
+    }
+  },
+  "72": {
+    "inputs": {
+      "video": "7f575294eea673b0c29f5e037130150aca08c8c0c2fa79118a9a98932de23446.mp4",
+      "force_rate": [
+        "115",
+        1
+      ],
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": [
+        "113",
+        0
+      ],
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "class_type": "VHS_LoadVideo",
+    "_meta": {
+      "title": "\u4e0a\u4f20\u53c2\u8003\u89c6\u9891"
+    }
+  },
+  "113": {
+    "inputs": {
+      "value": "a*b+1",
+      "a": [
+        "120",
+        0
+      ],
+      "b": [
+        "115",
+        1
+      ]
+    },
+    "class_type": "SimpleMath+",
+    "_meta": {
+      "title": "\ud83d\udd27 Simple Math"
+    }
+  },
+  "115": {
+    "inputs": {
+      "float": 30.000000000000007
+    },
+    "class_type": "ttN float",
+    "_meta": {
+      "title": "\u5e27\u7387"
+    }
+  },
+  "120": {
+    "inputs": {
+      "value": 11
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "\u65f6\u957f"
+    }
+  },
+  "201": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "frame_rate": [
+        "115",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "dwpose_stickman",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": false,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "33",
+        0
+      ]
+    }
+  },
+  "202": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "frame_rate": [
+        "115",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "dwpose_face",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": false,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "63",
+        0
+      ]
+    }
+  }
+}

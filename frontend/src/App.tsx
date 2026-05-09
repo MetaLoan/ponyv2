@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { useTasks, TaskCenter } from "./TaskCenter";
 
-type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame";
+type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame" | "wan2_2_dwpose_extract" | "wan2_2_animate";
 type WanPreset = "manual" | "realistic_video" | "anime_video";
 
 type CatalogItem = {
@@ -116,6 +116,8 @@ function App() {
   const [poseMedia, setPoseMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [qwenExtraMedia, setQwenExtraMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [wanStartMedia, setWanStartMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
+  const [actionVideoMedia, setActionVideoMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
+  const [faceMedia, setFaceMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
   const [prompt, setPrompt] = useState(
     "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，细节清晰，人物自然融入环境，photorealistic, best quality, ultra detailed"
   );
@@ -535,7 +537,9 @@ function App() {
     qwen_swap_face: "Base image is generated first, then Qwen uses reference face image and optional image 3 for face swap.",
     qwen_pose_fusion: "Pose image + face image + prompt. Qwen fuses the face directly onto the pose image.",
     qwen_edit_face: "Base image is generated first, then Qwen edits the face directly from the prompt without a reference face image.",
-    wan2_2_i2v_extend_any_frame: "Start image + prompt + frame count. Generates video frames natively in a single pass and merges them.",
+    wan2_2_i2v_extend_any_frame: "Generate extended video frames from an initial image or video segment.",
+    wan2_2_dwpose_extract: "Extract a skeleton (DWPose) MP4 from an uploaded source dance video.",
+    wan2_2_animate: "Animate a static character image using a source action video while precisely keeping facial expressions.",
   }[mode];
 
   async function onRenderWorkflow() {
@@ -564,6 +568,19 @@ function App() {
         body.reference_image = await resolveMedia(referenceMedia);
         body.pose_image = await resolveMedia(poseMedia);
       }
+      
+    if (mode === "wan2_2_dwpose_extract") {
+      body.video_url = await resolveMedia(actionVideoMedia);
+    }
+    if (mode === "wan2_2_animate") {
+      body.pose_video_url = await resolveMedia(poseMedia);
+      body.face_video_url = await resolveMedia(faceMedia);
+      body.character_image_url = await resolveMedia(referenceMedia);
+      body.prompt = prompt;
+      body.width = parseInt(i2vResolution.split("*")[0]);
+      body.height = parseInt(i2vResolution.split("*")[1]);
+    }
+
       if (mode === "wan2_2_i2v_extend_any_frame") {
         if (wanInputType === "image") {
           body.startimg = await resolveMedia(wanStartMedia);
@@ -995,11 +1012,13 @@ function App() {
             <option value="qwen_pose_fusion">qwen_pose_fusion: pose + face Qwen fusion</option>
             <option value="qwen_edit_face">qwen_edit_face: prompt then Qwen face edit</option>
             <option value="wan2_2_i2v_extend_any_frame">wan2.2 i2v-extend-any-frame</option>
+            <option value="wan2_2_dwpose_extract">wan2.2 Generate DWPose</option>
+            <option value="wan2_2_animate">wan2.2 Animate Generate</option>
           </select>
           <p className="muted compact">{modeSummary}</p>
         </section>
 
-        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face") && (
+        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face" || mode === "wan2_2_animate") && (
           <MediaCard
             title={mode === "qwen_swap_face" ? "Qwen Reference Face Image" : "Reference Image"}
             media={referenceMedia}
@@ -1009,6 +1028,51 @@ function App() {
           />
         )}
 
+        
+        {(mode === "wan2_2_dwpose_extract") && (
+          <MediaCard
+            title="Action Video (MP4)"
+            media={actionVideoMedia}
+            onKindChange={(kind) => setActionVideoMedia(prev => ({ ...prev, kind }))}
+            onFileChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                const file = e.target.files[0];
+                setActionVideoMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+              }
+            }}
+            onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
+            
+          />
+        )}
+
+        {mode === "wan2_2_animate" && (
+          <>
+            <MediaCard
+              title="Pose Stickman Video (MP4)"
+              media={poseMedia}
+              onKindChange={(kind) => setPoseMedia(prev => ({ ...prev, kind }))}
+              onFileChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const file = e.target.files[0];
+                  setPoseMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+                }
+              }}
+              onURLChange={(value) => setPoseMedia(prev => ({ ...prev, url: value }))}
+            />
+            <MediaCard
+              title="Face Crop Video (MP4)"
+              media={faceMedia}
+              onKindChange={(kind) => setFaceMedia(prev => ({ ...prev, kind }))}
+              onFileChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const file = e.target.files[0];
+                  setFaceMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+                }
+              }}
+              onURLChange={(value) => setFaceMedia(prev => ({ ...prev, url: value }))}
+            />
+          </>
+        )}
         {mode === "qwen_pose_fusion" && (
           <MediaCard
             title="Qwen Face Image"
@@ -1059,6 +1123,51 @@ function App() {
           />
         )}
 
+        
+        {(mode === "wan2_2_dwpose_extract") && (
+          <MediaCard
+            title="Action Video (MP4)"
+            media={actionVideoMedia}
+            onKindChange={(kind) => setActionVideoMedia(prev => ({ ...prev, kind }))}
+            onFileChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                const file = e.target.files[0];
+                setActionVideoMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+              }
+            }}
+            onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
+            
+          />
+        )}
+
+        {mode === "wan2_2_animate" && (
+          <>
+            <MediaCard
+              title="Pose Stickman Video (MP4)"
+              media={poseMedia}
+              onKindChange={(kind) => setPoseMedia(prev => ({ ...prev, kind }))}
+              onFileChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const file = e.target.files[0];
+                  setPoseMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+                }
+              }}
+              onURLChange={(value) => setPoseMedia(prev => ({ ...prev, url: value }))}
+            />
+            <MediaCard
+              title="Face Crop Video (MP4)"
+              media={faceMedia}
+              onKindChange={(kind) => setFaceMedia(prev => ({ ...prev, kind }))}
+              onFileChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const file = e.target.files[0];
+                  setFaceMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+                }
+              }}
+              onURLChange={(value) => setFaceMedia(prev => ({ ...prev, url: value }))}
+            />
+          </>
+        )}
         {mode === "qwen_pose_fusion" && (
           <MediaCard
             title="Qwen Pose Image"
@@ -1099,7 +1208,7 @@ function App() {
                 onKindChange={(kind) => updateMedia("wanStartVideo", { kind })}
                 onFileChange={(e) => onFileChange("wanStartVideo", e)}
                 onURLChange={(value) => onURLChange("wanStartVideo", value)}
-                accept="video/*"
+                
               />
             )}
             <div className="subcard" style={{ marginTop: "0.5rem" }}>

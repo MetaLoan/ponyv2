@@ -1,0 +1,51 @@
+{
+  "1": {
+    "inputs": {
+      "video": "input.mp4",
+      "force_rate": 0,
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    },
+    "class_type": "VHS_LoadVideo"
+  },
+  "2": {
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": 720,
+      "bbox_detector": "yolox_l.torchscript.pt",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt"
+    },
+    "class_type": "DWPreprocessor"
+  },
+  "3": {
+    "inputs": {
+      "images": [
+        "2",
+        0
+      ],
+      "frame_rate": [
+        "1",
+        1
+      ],
+      "loop_count": 0,
+      "filename_prefix": "Wan2_2_DWPose",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine"
+  }
+}

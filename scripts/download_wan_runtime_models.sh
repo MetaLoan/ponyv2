@@ -17,9 +17,13 @@ TEXT_ENCODER_URL="${TEXT_ENCODER_URL:-$HF_BASE_21/text_encoders/umt5_xxl_fp8_e4m
 CLIP_VISION_NAME="${CLIP_VISION_NAME:-clip_vision_h.safetensors}"
 CLIP_VISION_URL="${CLIP_VISION_URL:-$HF_BASE_21/clip_vision/clip_vision_h.safetensors}"
 
+ANIMATE_NAME="${ANIMATE_NAME:-Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors}"
+ANIMATE_URL="${ANIMATE_URL:-https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan2_2-Animate-14B_fp8_scaled_e4m3fn_KJ_v2.safetensors}"
+
 mkdir -p \
   "$MODELS_DIR/unet" \
   "$MODELS_DIR/diffusion_models" \
+  "$MODELS_DIR/diffusion_models/Wan22Animate" \
   "$MODELS_DIR/vae" \
   "$MODELS_DIR/text_encoders" \
   "$MODELS_DIR/clip_vision"
@@ -95,6 +99,12 @@ if existing_l="$(resolve_existing_model "$Q8L_NAME" "$MODELS_DIR/unet" "$MODELS_
   echo "[skip] $existing_l"
 else
   download_civitai "$Q8L_URL" "$MODELS_DIR/unet/$Q8L_NAME"
+fi
+
+if existing_animate="$(resolve_existing_model "$ANIMATE_NAME" "$MODELS_DIR/diffusion_models/Wan22Animate" "$MODELS_DIR/unet/Wan22Animate/$ANIMATE_NAME")"; then
+  echo "[skip] $existing_animate"
+else
+  download_http "$ANIMATE_URL" "$MODELS_DIR/diffusion_models/Wan22Animate/$ANIMATE_NAME"
 fi
 
 echo

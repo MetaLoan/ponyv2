@@ -359,3 +359,68 @@ curl -X POST "https://api.runpod.ai/v2/<YOUR_ENDPOINT_ID>/runsync" \
 | `worker` | Worker 环境信息（Pod ID、GPU ID、镜像版本号） |
 
 > **提示**：此接口为轻量级诊断调用，不占用 GPU 资源，不触发任何生成工作流。建议使用 `runsync`（同步）模式调用以立即获取结果。
+
+---
+
+# 7. Wan2.2 DWPose 提取模式 (wan2_2_dwpose_extract)
+
+用于从原始跳舞视频中极速提取黑白骨骼视频（不生成新人物，仅用于提取特征保存为动作库）。
+
+### 请求示例
+
+```json
+{
+  "input": {
+    "mode": "wan2_2_dwpose_extract",
+    "video_url": "https://example.com/source_dance.mp4"
+  }
+}
+```
+
+- **`mode`**: 固定为 `"wan2_2_dwpose_extract"`。
+- **`video_url`**: 需要提取骨骼的原始视频 URL。
+
+### 返回结果
+
+返回提取出的两段骨骼视频和面部剪裁视频的 S3 URL。
+
+```json
+{
+  "ok": true,
+  "pose_video_url": "s3://.../dwpose_stickman_xxx.mp4",
+  "face_video_url": "s3://.../dwpose_face_xxx.mp4"
+}
+```
+
+---
+
+# 8. Wan2.2 动作迁移与表情保留生成 (wan2_2_animate)
+
+用于将用户的脸/角色，无缝替换到指定的动作视频中。此时需要直接传入从模式7中提取出的 `pose_video_url` 和 `face_video_url`。
+
+### 请求示例
+
+```json
+{
+  "input": {
+    "mode": "wan2_2_animate",
+    "pose_video_url": "https://example.com/dwpose_stickman.mp4",
+    "face_video_url": "https://example.com/dwpose_face.mp4",
+    "character_image_url": "https://example.com/user_face.jpg",
+    "prompt": "这个角色在跳舞",
+    "width": 720,
+    "height": 1280
+  }
+}
+```
+
+- **`mode`**: 固定为 `"wan2_2_animate"`。
+- **`pose_video_url`**: DWPose 提取出的骨骼视频 (stickman MP4)。
+- **`face_video_url`**: DWPose 提取出的原人物面部裁剪视频 (face crop MP4)。
+- **`character_image_url`**: 要替换的人物静态图 URL。
+- **`prompt`**: 描述文字，默认为 `"这个角色在跳舞"`。
+- **`width` / `height`**: 输出分辨率，默认为 720x1280。
+
+### 返回结果
+
+返回换角后的最终生成视频。

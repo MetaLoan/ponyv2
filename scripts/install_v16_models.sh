@@ -128,6 +128,10 @@ PY
 if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   mkdir -p "$CUSTOM_NODES_ROOT"
 
+  ensure_git_repo "https://github.com/jamesWalker55/comfyui-various.git" \
+    "$CUSTOM_NODES_ROOT/comfyui-various"
+  ensure_git_repo "https://github.com/kijai/ComfyUI-WanVideoWrapper.git" \
+    "$CUSTOM_NODES_ROOT/ComfyUI-WanVideoWrapper"
   ensure_git_repo "https://github.com/Fannovel16/comfyui_controlnet_aux.git" \
     "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux"
   ensure_git_repo "https://github.com/cubiq/PuLID_ComfyUI.git" \
@@ -147,6 +151,7 @@ if [[ "$INSTALL_CUSTOM_NODES" == "1" ]]; then
   ensure_git_repo "https://github.com/ltdrdata/ComfyUI-Manager.git" \
     "$CUSTOM_NODES_ROOT/ComfyUI-Manager"
 
+  install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-WanVideoWrapper/requirements.txt"
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/PuLID_ComfyUI/requirements.txt"
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/comfyui_controlnet_aux/requirements.txt"
   install_requirements_if_exists "$CUSTOM_NODES_ROOT/ComfyUI-VideoHelperSuite/requirements.txt"

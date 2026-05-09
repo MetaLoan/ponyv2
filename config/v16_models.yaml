@@ -63,6 +63,16 @@
       "url": "https://huggingface.co/yzd-v/DWPose/resolve/main/dw-ll_ucoco_384.onnx"
     },
     {
+      "name": "yolox_l.torchscript.pt",
+      "target": "custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/yolox_l.torchscript.pt",
+      "url": "https://huggingface.co/yzd-v/DWPose/resolve/main/yolox_l.torchscript.pt"
+    },
+    {
+      "name": "dw-ll_ucoco_384_bs5.torchscript.pt",
+      "target": "custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/dw-ll_ucoco_384_bs5.torchscript.pt",
+      "url": "https://huggingface.co/yzd-v/DWPose/resolve/main/dw-ll_ucoco_384_bs5.torchscript.pt"
+    },
+    {
       "name": "4x-UltraSharp.pth",
       "target": "models/upscale_models/4x-UltraSharp.pth",
       "url": "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth"

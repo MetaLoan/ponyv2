@@ -1514,6 +1514,8 @@ def _concat_video_segments(segment_paths: List[Path], output_path: Path) -> None
             str(list_path),
             "-c:v",
             "libx264",
+            "-preset",
+            "ultrafast",
             "-pix_fmt",
             "yuv420p",
             "-an",
@@ -1702,6 +1704,129 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
     if "47" in prompt:
         prompt["47"]["inputs"]["filename_prefix"] = f"wan_{data.get('request_id', 'wan')}_{segment_idx:02d}"
 
+
+
+
+def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None) -> dict:
+    from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
+    from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt, _summarize_history
+    import tempfile, subprocess
+    
+    prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_dwpose_extract_api.json")
+    
+    # 1. Resolve video
+    video_url = data.get("video_url")
+    if not video_url:
+        raise ValueError("video_url is required for dwpose extract")
+    video_filename = resolve_media_to_comfy_filename(video_url, "video")
+    prompt["1"]["inputs"]["video"] = video_filename
+    prompt["3"]["inputs"]["filename_prefix"] = f"dwpose_{request_id}"
+    
+    _check_cancelled(request_id)
+    prompt_id = queue_prompt(prompt)
+    _register_active_prompt(request_id, prompt_id)
+    try:
+        history_obj = wait_history(prompt_id, event=event, request_id=request_id)
+    finally:
+        _unregister_active_prompt(request_id)
+        
+    outputs = history_obj.get("outputs", {})
+    pose_mp4 = None
+    face_mp4 = None
+    for nid, nout in outputs.items():
+        if "gifs" in nout:
+            for vid_info in nout["gifs"]:
+                fname = vid_info.get("filename", "")
+                filepath = COMFY_OUTPUT_DIR / vid_info.get("subfolder", "") / fname
+                if filepath.exists():
+                    if "stickman" in fname:
+                        pose_mp4 = filepath
+                    elif "face" in fname:
+                        face_mp4 = filepath
+    
+    if not pose_mp4 or not face_mp4:
+        raise RuntimeError("Failed to generate both pose and face mp4s for dwpose extract")
+        
+    s3_key_pose = f"outputs/{request_id}/dwpose_stickman_{request_id}.mp4"
+    s3_key_face = f"outputs/{request_id}/dwpose_face_{request_id}.mp4"
+    pose_url = upload_to_s3(pose_mp4, s3_key_pose)
+    face_url = upload_to_s3(face_mp4, s3_key_face)
+    
+    return {
+        "ok": True,
+        "pose_video_url": pose_url,
+        "face_video_url": face_url,
+        "request_id": request_id,
+        "prompt_id": prompt_id
+    }
+
+
+def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> dict:
+    from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
+    from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt, _summarize_history
+    import tempfile, subprocess
+    
+    prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_animate_api.json")
+    
+    # Inputs
+    pose_url = data.get("pose_video_url")
+    if not pose_url:
+        raise ValueError("pose_video_url is required")
+    face_url = data.get("face_video_url")
+    if not face_url:
+        raise ValueError("face_video_url is required")
+    char_img = data.get("character_image_url")
+    if not char_img:
+        raise ValueError("character_image_url is required")
+        
+    width = int(data.get("width", 720))
+    height = int(data.get("height", 1280))
+    
+    prompt["301"]["inputs"]["video"] = resolve_media_to_comfy_filename(pose_url, "pose_video")
+    prompt["302"]["inputs"]["video"] = resolve_media_to_comfy_filename(face_url, "face_video")
+    prompt["55"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
+    prompt["122"]["inputs"]["text"] = data.get("prompt", "这个角色在跳舞")
+    prompt["81"]["inputs"]["filename_prefix"] = f"wan_animate_{request_id}"
+    
+    # Resolution
+    prompt["14"]["inputs"]["image_gen_width"] = width
+    prompt["14"]["inputs"]["image_gen_height"] = height
+    prompt["39"]["inputs"]["width"] = width
+    prompt["39"]["inputs"]["height"] = height
+    prompt["84"]["inputs"]["width"] = width
+    prompt["84"]["inputs"]["height"] = height
+    
+    _check_cancelled(request_id)
+    prompt_id = queue_prompt(prompt)
+    _register_active_prompt(request_id, prompt_id)
+    try:
+        history_obj = wait_history(prompt_id, event=event, request_id=request_id)
+    finally:
+        _unregister_active_prompt(request_id)
+        
+    outputs = history_obj.get("outputs", {})
+    output_mp4 = None
+    for nid, nout in outputs.items():
+        if "gifs" in nout:
+            for vid_info in nout["gifs"]:
+                fname = vid_info.get("filename", "")
+                filepath = COMFY_OUTPUT_DIR / vid_info.get("subfolder", "") / fname
+                if filepath.exists():
+                    output_mp4 = filepath
+                    break
+    
+    if not output_mp4:
+        raise RuntimeError("No output mp4 generated for animate")
+        
+    s3_key = f"outputs/{request_id}/wan_animate_{request_id}.mp4"
+    final_url = upload_to_s3(output_mp4, s3_key)
+    
+    return {
+        "ok": True,
+        "video_url": final_url,
+        "request_id": request_id,
+        "prompt_id": prompt_id
+    }
 
 
 def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dict = None) -> Dict:
@@ -1898,48 +2023,65 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
         finally:
             _unregister_active_prompt(request_id)
 
-        image_files = []
+        media_files = []
+        is_video = False
         outputs = history_obj.get("outputs", {})
         for nid, nout in outputs.items():
-            if "images" in nout:
+            if "gifs" in nout:
+                for vid_info in nout["gifs"]:
+                    fname = vid_info.get("filename", "")
+                    subfolder = vid_info.get("subfolder", "")
+                    filepath = COMFY_OUTPUT_DIR / subfolder / fname
+                    if filepath.exists():
+                        media_files.append(filepath)
+                        is_video = True
+            elif "images" in nout and not is_video:
                 for img_info in nout["images"]:
                     fname = img_info.get("filename", "")
                     subfolder = img_info.get("subfolder", "")
                     filepath = COMFY_OUTPUT_DIR / subfolder / fname
                     if filepath.exists():
-                        image_files.append(filepath)
+                        media_files.append(filepath)
 
-        if not image_files:
-            raise RuntimeError(f"Segment {segment_idx} generated no frames.")
+        if not media_files:
+            raise RuntimeError(f"Segment {segment_idx} generated no media.")
 
-        image_files.sort()
+        media_files.sort()
         segment_filename = f"wan_{request_id}_seg_{segment_idx:02d}.mp4"
         segment_path = COMFY_OUTPUT_DIR / segment_filename
 
-        if len(image_files) == 1:
-            cmd = [
-                "ffmpeg", "-y", "-loop", "1", "-i", str(image_files[0]),
-                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", str(segment_path),
-            ]
+        if is_video:
+            # It's already a generated MP4!
+            shutil.move(str(media_files[0]), str(segment_path))
+            # Extract last frame for next segment start
+            last_frame_bytes = _extract_video_last_frame_bytes(segment_path)
+            current_start_media, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
         else:
-            list_file = COMFY_OUTPUT_DIR / f"frames_{request_id}_{segment_idx}.txt"
-            with list_file.open("w") as lf:
-                for img_path in image_files:
-                    lf.write(f"file '{img_path}'\n")
-                    lf.write(f"duration {1.0/WAN_VIDEO_FPS}\n")
-            cmd = [
-                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                "-i", str(list_file),
-                "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", str(segment_path),
-            ]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        segment_video_paths.append(segment_path)
+            # Fallback to PNG frames encoding
+            if len(media_files) == 1:
+                cmd = [
+                    "ffmpeg", "-y", "-loop", "1", "-i", str(media_files[0]),
+                    "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", str(segment_path),
+                ]
+            else:
+                list_file = COMFY_OUTPUT_DIR / f"frames_{request_id}_{segment_idx}.txt"
+                with list_file.open("w") as lf:
+                    for img_path in media_files:
+                        lf.write(f"file '{img_path}'\n")
+                        lf.write(f"duration {1.0/WAN_VIDEO_FPS}\n")
+                cmd = [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", str(list_file),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", str(segment_path),
+                ]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            # Extract last frame from PNGs directly
+            last_frame_bytes = media_files[-1].read_bytes()
+            current_start_media, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
 
-        # Extract last frame for next segment start
-        last_frame_bytes = image_files[-1].read_bytes()
-        current_start_media, _ = _image_bytes_to_qwen_data_url(last_frame_bytes)
+        segment_video_paths.append(segment_path)
 
     if not segment_video_paths:
         raise RuntimeError("No segments were successfully generated.")
@@ -2284,6 +2426,11 @@ def _handler_inner(data: Dict, request_id: str, event: Dict) -> Dict:
             except Exception as exc:
                 raise RuntimeError(f"WAN comfy backend failed: {exc}") from exc
         return _generate_wan_extend_any_frame(data, request_id)
+
+    if data["mode"] == "wan2_2_dwpose_extract":
+        return _generate_wan_dwpose_extract(data, request_id, event=event)
+    if data["mode"] == "wan2_2_animate":
+        return _generate_wan_animate(data, request_id, event=event)
 
     prompt = load_json(WORKFLOW_API_PATH)
     v3 = load_json(WORKFLOW_V3_PATH)

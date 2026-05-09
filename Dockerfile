@@ -38,6 +38,8 @@ RUN python3 -m pip install -r /workspace/runpod-slim/ComfyUI/requirements.txt
 RUN set -eux; \
     mkdir -p /workspace/runpod-slim/ComfyUI/custom_nodes; \
     for pair in \
+      "https://github.com/jamesWalker55/comfyui-various.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui-various" \
+      "https://github.com/kijai/ComfyUI-WanVideoWrapper.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper" \
       "https://github.com/Fannovel16/comfyui_controlnet_aux.git /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux" \
       "https://github.com/cubiq/PuLID_ComfyUI.git /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI" \
       "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite" \
@@ -65,6 +67,7 @@ RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-bin
 
 RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
     python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/requirements.txt; fi && \
@@ -98,6 +101,8 @@ COPY workflows/pulid_sdxl_workflow_v3.json /workspace/runpod-slim/ComfyUI/pulid_
 COPY workflows/pulid_sdxl_workflow_v3_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_v3_api.json
 COPY workflows/pulid_sdxl_workflow_web_api.json /workspace/runpod-slim/ComfyUI/pulid_sdxl_workflow_web_api.json
 COPY workflows/wan2_2_i2v_extend_any_frame_api.json /workspace/runpod-slim/ComfyUI/wan2_2_i2v_extend_any_frame_api.json
+COPY workflows/wan2_2_dwpose_extract_api.json /workspace/runpod-slim/ComfyUI/wan2_2_dwpose_extract_api.json
+COPY workflows/wan2_2_animate_api.json /workspace/runpod-slim/ComfyUI/wan2_2_animate_api.json
 
 RUN chmod +x /workspace/runpod-slim/scripts/install_v16_models.sh
 
