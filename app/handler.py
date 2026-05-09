@@ -769,13 +769,23 @@ def validate_input(input_data: Dict) -> None:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
         pass
+    elif mode == "wan2_2_animate":
+        if "pose_video_url" not in input_data:
+            raise RuntimeError("pose_video_url is required for wan2_2_animate")
+        if "face_video_url" not in input_data:
+            raise RuntimeError("face_video_url is required for wan2_2_animate")
+        if "character_image_url" not in input_data:
+            raise RuntimeError("character_image_url is required for wan2_2_animate")
+    elif mode == "wan2_2_dwpose_extract":
+        if "video_url" not in input_data:
+            raise RuntimeError("video_url is required for wan2_2_dwpose_extract")
     elif mode == "cancel_task":
         return  # cancel_task is handled before validate_input is called, but just in case
     elif mode == "tail_logs":
         return  # tail_logs is handled before validate_input is called
     else:
         raise RuntimeError(f"Unsupported mode: {mode}")
-    if not str(input_data.get("prompt", "")).strip():
+    if mode != "wan2_2_dwpose_extract" and not str(input_data.get("prompt", "")).strip():
         raise RuntimeError("prompt is required")
 
 
