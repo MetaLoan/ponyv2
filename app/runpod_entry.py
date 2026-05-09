@@ -139,6 +139,17 @@ def start_comfy_if_needed() -> None:
     )
     tee_thread.start()
 
+    # Monitor thread: if ComfyUI process dies (e.g. OOM killed), we must crash the
+    # entire container so RunPod can provision a fresh one. Otherwise, it becomes
+    # a zombie worker that permanently fails all subsequent requests with ConnectionRefusedError.
+    def _monitor_comfy_process():
+        retcode = proc.wait()
+        print(f"[FATAL] ComfyUI process unexpectedly exited with code {retcode}. Terminating container to force restart.", flush=True)
+        os._exit(1)
+
+    monitor_thread = threading.Thread(target=_monitor_comfy_process, daemon=True)
+    monitor_thread.start()
+
     try:
         wait_comfy_ready(api_url, boot_timeout)
     except Exception:

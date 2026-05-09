@@ -2260,6 +2260,11 @@ def handler(event: Dict) -> Dict:
             "request_id": request_id,
             "message": "Task was cancelled during execution",
         }
+    except Exception as exc:
+        if "Connection refused" in str(exc) or "111" in str(exc):
+            print(f"[FATAL] ComfyUI connection refused! The backend process likely died. Forcing container restart. Error: {exc}", flush=True)
+            os._exit(1)
+        raise
     finally:
         _cleanup_cancelled(request_id)
 
