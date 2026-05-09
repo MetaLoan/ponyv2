@@ -137,6 +137,9 @@ type GenerateRequest struct {
 	FaceImage           string       `json:"face_image"`
 	WanFaceSwapPrompt   string       `json:"wan_face_swap_prompt"`
 	StartVideo          string       `json:"startvideo"`
+	PoseVideoURL        string       `json:"pose_video_url"`
+	FaceVideoURL        string       `json:"face_video_url"`
+	CharacterImageURL   string       `json:"character_image_url"`
 }
 
 type LoraConfig struct {
@@ -230,6 +233,12 @@ func NewApp() (*App, error) {
 	cfg.RunPodAPIKey = firstNonEmpty(os.Getenv("RUNPOD_API_KEY"), os.Getenv("runpod"))
 	cfg.RunPodEndpointID = firstNonEmpty(os.Getenv("RUNPOD_ENDPOINT_ID"), os.Getenv("Endpoint"))
 	loadS3CredsFile(&cfg)
+	log.Printf("DEBUG_S3_ACCESS_KEY: %s", cfg.S3AccessKey)
+	log.Printf("DEBUG_S3_SECRET_KEY: %s", cfg.S3SecretKey)
+	log.Printf("DEBUG_S3_BUCKET: %s", cfg.S3Bucket)
+	log.Printf("DEBUG_S3_ENDPOINT: %s", cfg.S3Endpoint)
+	log.Printf("DEBUG_S3_REGION: %s", cfg.S3Region)
+	log.Printf("DEBUG_S3_PREFIX: %s", cfg.S3RootPrefix)
 
 	app := &App{
 		Config: cfg,
@@ -1090,6 +1099,9 @@ func (a *App) generateWithRunPod(ctx context.Context, req GenerateRequest) (*Gen
 		"sampler_name":           req.SamplerName,
 		"scheduler":              req.Scheduler,
 		"denoise":                req.Denoise,
+		"character_image_url":   req.CharacterImageURL,
+		"pose_video_url":        req.PoseVideoURL,
+		"face_video_url":        req.FaceVideoURL,
 		"enable_pulid":           req.EnablePulid != nil && *req.EnablePulid,
 		"pulid_weight":           req.PulidWeight,
 		"pulid_start_at":         req.PulidStartAt,
