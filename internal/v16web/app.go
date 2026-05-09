@@ -1689,7 +1689,7 @@ func normalizeRequest(req GenerateRequest) GenerateRequest {
 
 func normalizeMode(mode, referenceImage, poseImage, startImg string) string {
 	switch strings.TrimSpace(mode) {
-	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face", qwenDirectPoseFusionMode, "qwen_edit_face", wanExtendAnyFrameMode:
+	case "dual_pass_auto_pose", "pose_then_face_swap", "pose_only", "text_only", "qwen_swap_face", qwenDirectPoseFusionMode, "qwen_edit_face", wanExtendAnyFrameMode, "wan2_2_animate", "wan2_2_dwpose_extract":
 		return strings.TrimSpace(mode)
 	}
 	if strings.TrimSpace(startImg) != "" {
@@ -1746,6 +1746,8 @@ func validateRequest(req GenerateRequest, requireMedia bool) error {
 		// prompt-guided Qwen edit uses the generated image as the base input.
 	case "text_only":
 		// prompt-only mode
+	case "wan2_2_animate", "wan2_2_dwpose_extract":
+		// allowed modes, validation is handled in Python backend or can be added here
 	default:
 		return fmt.Errorf("unsupported mode: %s", req.Mode)
 	}
