@@ -1729,9 +1729,12 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
     if not video_url:
         raise ValueError("video_url is required for dwpose extract")
     video_filename = resolve_media_to_comfy_filename(video_url, "video")
-    prompt["1"]["inputs"]["video"] = video_filename
-    prompt["3"]["inputs"]["filename_prefix"] = f"dwpose_{request_id}"
-    
+    if "72" in prompt:
+        prompt["72"]["inputs"]["video"] = video_filename
+    if "201" in prompt:
+        prompt["201"]["inputs"]["filename_prefix"] = f"dwpose_stickman_{request_id}"
+    if "202" in prompt:
+        prompt["202"]["inputs"]["filename_prefix"] = f"dwpose_face_{request_id}"
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
     _register_active_prompt(request_id, prompt_id)
@@ -1780,7 +1783,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     
     # Inputs
     pose_url = data.get("pose_video_url")
-    if not pose_url:
+    if not pose_url:ni
         raise ValueError("pose_video_url is required")
     face_url = data.get("face_video_url")
     if not face_url:
