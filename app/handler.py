@@ -1829,6 +1829,10 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if "84" in prompt:
         prompt["84"]["inputs"]["width"] = width
         prompt["84"]["inputs"]["height"] = height
+    
+    # Force VAE tiling to prevent OOM during video decode
+    if "26" in prompt:
+        prompt["26"]["inputs"]["enable_vae_tiling"] = True
     # Node 14 is optional or from a different workflow version
     if "14" in prompt:
         if "image_gen_width" in prompt["14"]["inputs"]:
