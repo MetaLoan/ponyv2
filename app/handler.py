@@ -1892,6 +1892,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
 
 
 def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dict = None) -> Dict:
+    import shutil
     if not WAN_WORKFLOW_API_PATH.exists():
         raise RuntimeError(f"WAN workflow template not found: {WAN_WORKFLOW_API_PATH}")
     if str(data.get("endimg", "")).strip():
