@@ -67,6 +67,7 @@ RUN python3 -m pip install --retries 5 --timeout 120 --no-cache-dir --prefer-bin
 
 RUN python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/PuLID_ComfyUI/requirements.txt && \
     python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui_controlnet_aux/requirements.txt && \
+    if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui-various/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui-various/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite/requirements.txt; fi && \
     if [ -f /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt ]; then python3 -m pip install --retries 5 --timeout 120 -r /workspace/runpod-slim/ComfyUI/custom_nodes/ComfyUI-KJNodes/requirements.txt; fi && \
