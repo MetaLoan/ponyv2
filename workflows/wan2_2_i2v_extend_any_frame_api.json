@@ -5,15 +5,7 @@
     },
     "class_type": "VAELoader"
   },
-  "390": {
-    "inputs": {
-      "model_name": "wan_2.1_vae.safetensors",
-      "precision": "bf16",
-      "use_cpu_cache": false,
-      "verbose": false
-    },
-    "class_type": "WanVideoVAELoader"
-  },
+
   "49": {
     "inputs": {
       "clip_name": "clip_vision_h.safetensors"
@@ -154,16 +146,11 @@
   },
   "8": {
     "inputs": {
-      "enable_vae_tiling": true,
-      "tile_x": 272,
-      "tile_y": 272,
-      "tile_stride_x": 144,
-      "tile_stride_y": 128,
-      "normalization": "default",
       "samples": ["103", 0],
-      "vae": ["390", 0]
+      "vae": ["39", 0],
+      "tile_size": 256
     },
-    "class_type": "WanVideoDecode"
+    "class_type": "VAEDecodeTiled"
   },
   "47": {
     "inputs": {

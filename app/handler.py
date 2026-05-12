@@ -1623,8 +1623,6 @@ def _wan_model_name(raw_value: object, fallback: str) -> str:
 def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: str, segment_length: int, segment_idx: int) -> None:
     if "39" in prompt:
         prompt["39"]["inputs"]["vae_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
-    if "390" in prompt:
-        prompt["390"]["inputs"]["model_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
     if "49" in prompt:
         prompt["49"]["inputs"]["clip_name"] = str(data.get("wan_clip_vision_name", WAN_CLIP_VISION_NAME)).strip() or WAN_CLIP_VISION_NAME
     if "38" in prompt:
@@ -1847,10 +1845,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if data.get("wan_clip_vision_name"):
         prompt["86"]["inputs"]["clip_name"] = data["wan_clip_vision_name"]
         
-    # Enforce VAE tiling to prevent OOM
-    if "8" in prompt:
-        prompt["8"]["inputs"]["enable_vae_tiling"] = True
-        
+
     # LoRAs
     loras = data.get("wan_loras", [])
     if loras:
