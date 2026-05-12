@@ -1,6 +1,12 @@
 {
   "39": {
     "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "390": {
+    "inputs": {
       "model_name": "wan_2.1_vae.safetensors",
       "precision": "bf16",
       "use_cpu_cache": false,
@@ -155,7 +161,7 @@
       "tile_stride_y": 128,
       "normalization": "default",
       "samples": ["103", 0],
-      "vae": ["39", 0]
+      "vae": ["390", 0]
     },
     "class_type": "WanVideoDecode"
   },
