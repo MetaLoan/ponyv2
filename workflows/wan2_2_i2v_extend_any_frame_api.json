@@ -148,7 +148,10 @@
     "inputs": {
       "samples": ["103", 0],
       "vae": ["39", 0],
-      "tile_size": 256
+      "tile_size": 256,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 4
     },
     "class_type": "VAEDecodeTiled"
   },
