@@ -1688,7 +1688,7 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
     base_steps = int(data.get("base_steps", 4))
     steps = int(data.get("steps", 4))
     total_steps = base_steps + steps
-    base_cfg = float(data.get("base_cfg", 2.0))
+    base_cfg = float(data.get("base_cfg", 1.0))
     cfg = float(data.get("cfg", 1.0))
 
     if "102" in prompt:
