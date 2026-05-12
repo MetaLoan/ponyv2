@@ -145,10 +145,16 @@
   },
   "8": {
     "inputs": {
+      "enable_vae_tiling": true,
+      "tile_x": 272,
+      "tile_y": 272,
+      "tile_stride_x": 144,
+      "tile_stride_y": 128,
+      "normalization": "default",
       "samples": ["103", 0],
       "vae": ["39", 0]
     },
-    "class_type": "VAEDecode"
+    "class_type": "WanVideoDecode"
   },
   "47": {
     "inputs": {

@@ -1845,6 +1845,10 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if data.get("wan_clip_vision_name"):
         prompt["86"]["inputs"]["clip_name"] = data["wan_clip_vision_name"]
         
+    # Enforce VAE tiling to prevent OOM
+    if "8" in prompt:
+        prompt["8"]["inputs"]["enable_vae_tiling"] = True
+        
     # LoRAs
     loras = data.get("wan_loras", [])
     if loras:
