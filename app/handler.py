@@ -769,16 +769,6 @@ def validate_input(input_data: Dict) -> None:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
         pass
-    elif mode == "wan2_2_dwpose_extract":
-        if "video_url" not in input_data:
-            raise RuntimeError("video_url is required for wan2_2_dwpose_extract")
-    elif mode == "wan2_2_animate":
-        if "pose_video_url" not in input_data:
-            raise RuntimeError("pose_video_url is required for wan2_2_animate")
-        if "face_video_url" not in input_data:
-            raise RuntimeError("face_video_url is required for wan2_2_animate")
-        if "character_image_url" not in input_data:
-            raise RuntimeError("character_image_url is required for wan2_2_animate")
     elif mode == "cancel_task":
         return  # cancel_task is handled before validate_input is called, but just in case
     elif mode == "tail_logs":
@@ -1632,7 +1622,7 @@ def _wan_model_name(raw_value: object, fallback: str) -> str:
 
 def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: str, segment_length: int, segment_idx: int) -> None:
     if "39" in prompt:
-        prompt["39"]["inputs"]["vae_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
+        prompt["39"]["inputs"]["model_name"] = str(data.get("wan_vae_name", WAN_VAE_NAME)).strip() or WAN_VAE_NAME
     if "49" in prompt:
         prompt["49"]["inputs"]["clip_name"] = str(data.get("wan_clip_vision_name", WAN_CLIP_VISION_NAME)).strip() or WAN_CLIP_VISION_NAME
     if "38" in prompt:

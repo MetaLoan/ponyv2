@@ -1,9 +1,12 @@
 {
   "39": {
     "inputs": {
-      "vae_name": "wan_2.1_vae.safetensors"
+      "model_name": "wan_2.1_vae.safetensors",
+      "precision": "bf16",
+      "use_cpu_cache": false,
+      "verbose": false
     },
-    "class_type": "VAELoader"
+    "class_type": "WanVideoVAELoader"
   },
   "49": {
     "inputs": {
