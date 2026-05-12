@@ -2,3 +2,4 @@ runpod>=1.7.0
 boto3>=1.34.0
 requests>=2.31.0
 Pillow>=10.0.0
+sageattention==1.0.6
