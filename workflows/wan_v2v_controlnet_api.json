@@ -1,0 +1,195 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference_image.jpg"
+    }
+  },
+  "2": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "raw_input_video.mp4",
+      "force_rate": 0,
+      "force_size": "Disabled"
+    }
+  },
+  "3": {
+    "class_type": "DWPreprocessor",
+    "inputs": {
+      "image": ["2", 0],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable"
+    }
+  },
+  "4": {
+    "class_type": "DepthAnythingV2Preprocessor",
+    "inputs": {
+      "image": ["2", 0]
+    }
+  },
+  "5": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["3", 0],
+      "frame_rate": 24,
+      "format": "video/h264-mp4",
+      "filename_prefix": "Wan2_Skeleton_Output"
+    }
+  },
+  "6": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["4", 0],
+      "frame_rate": 24,
+      "format": "video/h264-mp4",
+      "filename_prefix": "Wan2_Depth_Output"
+    }
+  },
+  "7": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "baked_skeleton.mp4",
+      "force_rate": 0,
+      "force_size": "Disabled"
+    }
+  },
+  "8": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "baked_depth.mp4",
+      "force_rate": 0,
+      "force_size": "Disabled"
+    }
+  },
+  "9": {
+    "class_type": "WanVideoControlNetLoader",
+    "inputs": {
+      "control_net_name": "wan2.1_openpose.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "WanVideoControlNetLoader",
+    "inputs": {
+      "control_net_name": "wan2.1_depth.safetensors"
+    }
+  },
+  "11": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": ["16", 0],
+      "negative": ["17", 0],
+      "control_net": ["9", 0],
+      "image": ["3", 0],
+      "strength": 0.8,
+      "start_percent": 0,
+      "end_percent": 1
+    }
+  },
+  "12": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": ["11", 0],
+      "negative": ["11", 1],
+      "control_net": ["10", 0],
+      "image": ["4", 0],
+      "strength": 0.6,
+      "start_percent": 0,
+      "end_percent": 1
+    }
+  },
+  "13": {
+    "class_type": "WanModelLoader",
+    "inputs": {
+      "model_name": "Wan2.1-Fun-1.3B-Control.safetensors"
+    }
+  },
+  "14": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan"
+    }
+  },
+  "15": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    }
+  },
+  "16": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "A beautiful girl walking...",
+      "clip": ["14", 0]
+    }
+  },
+  "17": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "low quality, distorted, deformed",
+      "clip": ["14", 0]
+    }
+  },
+  "18": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": ["15", 0],
+      "image": ["1", 0]
+    }
+  },
+  "19": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "20": {
+    "class_type": "WanImageToVideo",
+    "inputs": {
+      "width": 832,
+      "height": 832,
+      "length": 49,
+      "batch_size": 1,
+      "positive": ["12", 0],
+      "negative": ["12", 1],
+      "vae": ["19", 0],
+      "clip_vision_output": ["18", 0],
+      "start_image": ["1", 0]
+    }
+  },
+  "21": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 12345678,
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 30,
+      "return_with_leftover_noise": "disable",
+      "model": ["13", 0],
+      "positive": ["20", 0],
+      "negative": ["20", 1],
+      "latent_image": ["20", 2]
+    }
+  },
+  "22": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["21", 0],
+      "vae": ["19", 0]
+    }
+  },
+  "23": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["22", 0],
+      "frame_rate": 24,
+      "format": "video/h264-mp4",
+      "filename_prefix": "Wan2_Final_Result"
+    }
+  }
+}

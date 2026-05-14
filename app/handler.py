@@ -1896,15 +1896,15 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
     from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt
     
-    prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_animate_dwpose_base_api_fixed.json")
+    prompt = load_json("/workspace/runpod-slim/ComfyUI/wan_v2v_controlnet_api.json")
     
-    video_url = data.get("video_url")
-    if not video_url:
-        raise ValueError("video_url is required")
     char_img = data.get("reference_image")
     if not char_img:
         raise ValueError("reference_image is required")
         
+    baked_skeleton_path = data.get("baked_skeleton_path")
+    baked_depth_path = data.get("baked_depth_path")
+    
     res_str = str(data.get("resolution", "")).strip().upper()
     width = 0
     height = 0
@@ -1924,39 +1924,47 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
             width = int(data.get("width", 720))
             height = int(data.get("height", 1280))
             
-    if "72" in prompt:
-        prompt["72"]["inputs"]["video"] = resolve_media_to_comfy_filename(video_url, "video")
-    if "55" in prompt:
-        prompt["55"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
-    if "122" in prompt:
-        prompt["122"]["inputs"]["text"] = data.get("prompt", "A character")
-    if "81" in prompt:
-        prompt["81"]["inputs"]["filename_prefix"] = f"wan_video_edit_{request_id}"
+    frames = int(data.get("frames", 49))
+            
+    if baked_skeleton_path and baked_depth_path:
+        # Mode 2: Reuse baked outputs
+        prompt["1"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
+        prompt["7"]["inputs"]["video"] = resolve_media_to_comfy_filename(baked_skeleton_path, "skeleton")
+        prompt["8"]["inputs"]["video"] = resolve_media_to_comfy_filename(baked_depth_path, "depth")
         
-    if "120" in prompt and "duration" in data:
-        prompt["120"]["inputs"]["value"] = int(data["duration"])
-    elif "72" in prompt and "frames" in data:
-        prompt["72"]["inputs"]["frame_load_cap"] = int(data["frames"])
+        prompt["20"]["inputs"]["width"] = width
+        prompt["20"]["inputs"]["height"] = height
+        prompt["20"]["inputs"]["length"] = frames
         
-    if "74" in prompt:
-        prompt["74"]["inputs"]["value"] = width
-    if "73" in prompt:
-        prompt["73"]["inputs"]["value"] = height
+        prompt["11"]["inputs"]["image"] = ["7", 0]
+        prompt["12"]["inputs"]["image"] = ["8", 0]
         
-    sampler_id = "70"
+        for nid in ["2", "3", "4", "5", "6"]:
+            prompt.pop(nid, None)
+    else:
+        # Mode 1: Extract and generate
+        raw_video_path = data.get("video_url")
+        if not raw_video_path:
+            raise ValueError("video_url is required when baked paths are not provided")
+            
+        prompt["1"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
+        prompt["2"]["inputs"]["video"] = resolve_media_to_comfy_filename(raw_video_path, "video")
+        
+        prompt["20"]["inputs"]["width"] = width
+        prompt["20"]["inputs"]["height"] = height
+        prompt["20"]["inputs"]["length"] = frames
+        
+    if "16" in prompt:
+        prompt["16"]["inputs"]["text"] = data.get("prompt", "A character")
+    if "17" in prompt and "negative_prompt" in data:
+        prompt["17"]["inputs"]["text"] = data.get("negative_prompt")
+        
+    sampler_id = "21"
     if sampler_id in prompt:
         if "seed" in data:
-            prompt[sampler_id]["inputs"]["seed"] = int(data["seed"])
+            prompt[sampler_id]["inputs"]["noise_seed"] = int(data["seed"])
         if "steps" in data:
             prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
-            
-    # Models
-    if data.get("wan_unet_high_name"):
-        prompt["94"]["inputs"]["model"] = data["wan_unet_high_name"]
-    if data.get("wan_vae_name"):
-        prompt["60"]["inputs"]["model_name"] = data["wan_vae_name"]
-    if data.get("wan_clip_vision_name"):
-        prompt["86"]["inputs"]["clip_name"] = data["wan_clip_vision_name"]
             
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
@@ -1968,27 +1976,43 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         
     outputs = history_obj.get("outputs", {})
     output_mp4 = None
+    output_skeleton = None
+    output_depth = None
+    
     for nid, nout in outputs.items():
         if "gifs" in nout:
             for vid_info in nout["gifs"]:
                 fname = vid_info.get("filename", "")
                 filepath = COMFY_OUTPUT_DIR / vid_info.get("subfolder", "") / fname
                 if filepath.exists():
-                    output_mp4 = filepath
-                    break
-    
+                    if "Wan2_Skeleton_Output" in fname:
+                        output_skeleton = filepath
+                    elif "Wan2_Depth_Output" in fname:
+                        output_depth = filepath
+                    elif "Wan2_Final_Result" in fname:
+                        output_mp4 = filepath
+                    else:
+                        output_mp4 = filepath
+                        
     if not output_mp4:
         raise RuntimeError("No output mp4 generated for video edit")
         
     s3_key = f"outputs/{request_id}/wan_video_edit_{request_id}.mp4"
     final_url = upload_to_s3(output_mp4, s3_key)
     
-    return {
+    resp = {
         "ok": True,
         "video_url": final_url,
         "request_id": request_id,
         "prompt_id": prompt_id
     }
+    
+    if output_skeleton:
+        resp["baked_skeleton_url"] = upload_to_s3(output_skeleton, f"outputs/{request_id}/skeleton_{request_id}.mp4")
+    if output_depth:
+        resp["baked_depth_url"] = upload_to_s3(output_depth, f"outputs/{request_id}/depth_{request_id}.mp4")
+        
+    return resp
 
 
 def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dict = None) -> Dict:
