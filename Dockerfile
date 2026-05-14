@@ -8,7 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DEFAULT_TIMEOUT=120 \
     COMFY_ROOT=/workspace/runpod-slim/ComfyUI \
-    COMFY_API_URL=http://127.0.0.1:8188
+    COMFY_API_URL=http://127.0.0.1:8188 \
+    TORCH_CUDNN_V8_API_DISABLED=1
 
 WORKDIR /workspace/runpod-slim
 
