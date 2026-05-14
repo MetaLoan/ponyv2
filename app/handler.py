@@ -45,7 +45,7 @@ QWEN_API_URL = os.getenv(
     "DASHSCOPE_API_URL",
     os.getenv(
         "DASHSCOPE_BASE_URL",
-        "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        "https://ai.sprize.ai/proxy/dashscope/api/v1/services/aigc/multimodal-generation/generation",
     ),
 )
 QWEN_MODEL = os.getenv("DASHSCOPE_MODEL", "qwen-image-2.0-pro")
@@ -355,7 +355,7 @@ def _media_to_dashscope_accessible_url(media: str, request_id: str, prefix: str)
 
 
 def _dashscope_text_chat(prompt: str, system: str = None, model: str = "qwen-max") -> str:
-    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip() or "sk-H2DM7mK37fi7erjbuL9T6djsv9pWu"
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip() or "hD83tqpXBd2N6EAgxiS14uZQKWl7kJca"
     url = "https://ai.sprize.ai/proxy/dashscope-chat/chat/completions"
     messages = []
     if system:
@@ -1073,7 +1073,7 @@ def _resolve_qwen_edit_prompt(template: str, prompt_text: str) -> str:
 
 
 def _call_dashscope_qwen_face_swap(base_media: str, face_media: str, prompt: str, request_id: str = "") -> Tuple[bytes, str]:
-    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+    api_key = os.getenv("DASHSCOPE_API_KEY", "").strip() or "hD83tqpXBd2N6EAgxiS14uZQKWl7kJca"
     if not api_key:
         raise RuntimeError("DASHSCOPE_API_KEY is required for qwen face swap")
 
