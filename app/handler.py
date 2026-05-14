@@ -1903,7 +1903,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
     prepend_video_path, _ = _process_startvideo(data, request_id)
 
     total_frames = int(data.get("frames", 81) or 81)
-    segment_limit = 161  # 10 seconds at 16fps
+    segment_limit = 81  # 5 seconds at 16fps (optimized for speed via chunking)
     segment_count = max(1, (total_frames + segment_limit - 1) // segment_limit)
 
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
