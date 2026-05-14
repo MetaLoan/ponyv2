@@ -1908,8 +1908,7 @@ def _generate_wan_extend_any_frame_comfy(data: Dict, request_id: str, event: Dic
 
     prompt_text = str(data.get("prompt", "")).strip() or WAN_EXTEND_ANY_FRAME_DEFAULT_PROMPT
     negative_prompt = str(data.get("negative_prompt", "")).strip()
-    # 默认关闭Qwen提示词拆解，除非明确传入 force_qwen_prompts: true
-    auto_prompts = bool(data.get("force_qwen_prompts", False))
+    auto_prompts = bool(data.get("auto_segment_prompts") or data.get("auto_generate_segment_prompts") or False)
     segment_prompts = (
         _generate_segment_prompts(prompt_text, segment_count)
         if auto_prompts
