@@ -24,14 +24,14 @@
   "37": {
     "inputs": {
       "unet_name": "WAN2.2-NSFW-FastMove-V2-H.safetensors",
-      "weight_dtype": "default"
+      "weight_dtype": "fp8_e4m3fn"
     },
     "class_type": "UNETLoader"
   },
   "100": {
     "inputs": {
       "unet_name": "WAN2.2-NSFW-FastMove-V2-L.safetensors",
-      "weight_dtype": "default"
+      "weight_dtype": "fp8_e4m3fn"
     },
     "class_type": "UNETLoader"
   },
