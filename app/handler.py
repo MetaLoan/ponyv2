@@ -1966,6 +1966,15 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         if "steps" in data:
             prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
             
+    if data.get("wan_unet_high_name"):
+        prompt["13"]["inputs"]["model_name"] = data.get("wan_unet_high_name")
+    if data.get("wan_vae_name"):
+        prompt["19"]["inputs"]["vae_name"] = data.get("wan_vae_name")
+    if data.get("wan_clip_name"):
+        prompt["14"]["inputs"]["clip_name"] = data.get("wan_clip_name")
+    if data.get("wan_clip_vision_name"):
+        prompt["15"]["inputs"]["clip_name"] = data.get("wan_clip_vision_name")
+            
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
     _register_active_prompt(request_id, prompt_id)

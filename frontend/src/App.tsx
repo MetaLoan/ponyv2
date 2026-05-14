@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { useTasks, TaskCenter } from "./TaskCenter";
 
-type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame" | "wan2_2_dwpose_extract" | "wan2_2_animate";
+type Mode = "dual_pass_auto_pose" | "pose_then_face_swap" | "pose_only" | "text_only" | "qwen_swap_face" | "qwen_pose_fusion" | "qwen_edit_face" | "wan2_2_i2v_extend_any_frame" | "wan2_2_dwpose_extract" | "wan2_2_animate" | "wan2_2_video_edit";
 type WanPreset = "manual" | "realistic_video" | "anime_video";
 
 type CatalogItem = {
@@ -117,6 +117,9 @@ function App() {
   const [qwenExtraMedia, setQwenExtraMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [wanStartMedia, setWanStartMedia] = useState<MediaState>({ kind: "file", file: null, url: "", preview: "" });
   const [actionVideoMedia, setActionVideoMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
+  const [bakedSkeletonMedia, setBakedSkeletonMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
+  const [bakedDepthMedia, setBakedDepthMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
+  const [wanVideoEditType, setWanVideoEditType] = useState<"extract" | "reuse">("extract");
   const [faceMedia, setFaceMedia] = useState<MediaState>({ kind: "url", file: null, url: "", preview: "" });
   const [prompt, setPrompt] = useState(
     "沙滩，海边，晴天，自然光，蓝天白云，海浪，金色细沙，轻微海风，真实摄影感，画面通透，细节清晰，人物自然融入环境，photorealistic, best quality, ultra detailed"
@@ -206,6 +209,7 @@ function App() {
   const isWanMode = mode === "wan2_2_i2v_extend_any_frame";
   const isWanAnimateMode = mode === "wan2_2_animate";
   const isWanExtractMode = mode === "wan2_2_dwpose_extract";
+  const isWanVideoEditMode = mode === "wan2_2_video_edit";
   const wanModelOptions = useMemo(() => {
     const source = (catalog.unets || []).filter((item) => matchesHints(item, WAN_MODEL_HINTS));
     const pool = source.length > 0 ? source : (catalog.unets || []);
@@ -549,6 +553,7 @@ function App() {
     wan2_2_i2v_extend_any_frame: "Generate extended video frames from an initial image or video segment.",
     wan2_2_dwpose_extract: "Extract a skeleton (DWPose) MP4 from an uploaded source dance video.",
     wan2_2_animate: "Animate a static character image using a source action video while precisely keeping facial expressions.",
+    wan2_2_video_edit: "Dual-mode Video-to-Video Editing. Extract skeleton & depth, or reuse baked ones for extreme speed.",
   }[mode];
 
   async function onRenderWorkflow() {
@@ -593,6 +598,32 @@ function App() {
         body.face_video_url = await resolveMedia(faceMedia);
         body.character_image_url = await resolveMedia(referenceMedia);
         body.prompt = prompt;
+      }
+
+      if (mode === "wan2_2_video_edit") {
+        if (!referenceMedia.file && !referenceMedia.url.trim()) throw new Error("Missing Reference Character Image");
+        body.reference_image = await resolveMedia(referenceMedia);
+        body.prompt = prompt;
+        if (negativePrompt) body.negative_prompt = negativePrompt;
+        body.frames = frames;
+        
+        let w = width; let h = height;
+        if (i2vResolution === "720P") { w = 720; h = 1280; }
+        else if (i2vResolution === "480P") { w = 480; h = 832; }
+        else if (i2vResolution === "1080P") { w = 1080; h = 1920; }
+        body.width = w; body.height = h;
+        body.seed = seed;
+        body.steps = steps;
+        
+        if (wanVideoEditType === "extract") {
+          if (!actionVideoMedia.file && !actionVideoMedia.url.trim()) throw new Error("Missing Raw Action Video");
+          body.video_url = await resolveMedia(actionVideoMedia);
+        } else {
+          if (!bakedSkeletonMedia.file && !bakedSkeletonMedia.url.trim()) throw new Error("Missing Baked Skeleton Video");
+          if (!bakedDepthMedia.file && !bakedDepthMedia.url.trim()) throw new Error("Missing Baked Depth Video");
+          body.baked_skeleton_path = await resolveMedia(bakedSkeletonMedia);
+          body.baked_depth_path = await resolveMedia(bakedDepthMedia);
+        }
       }
 
       if (mode === "wan2_2_i2v_extend_any_frame") {
@@ -676,7 +707,7 @@ function App() {
     }
   }
 
-  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", patch: Partial<MediaState>) {
+  function updateMedia(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo" | "bakedSkeleton" | "bakedDepth", patch: Partial<MediaState>) {
     const setter =
       which === "reference"
         ? setReferenceMedia
@@ -688,11 +719,15 @@ function App() {
               ? setWanStartMedia
               : which === "wanStartVideo"
                 ? setWanStartVideoMedia
-                : setWanFaceMedia;
+                : which === "bakedSkeleton"
+                  ? setBakedSkeletonMedia
+                  : which === "bakedDepth"
+                    ? setBakedDepthMedia
+                    : setWanFaceMedia;
     setter((prev) => ({ ...prev, ...patch }));
   }
 
-  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", e: ChangeEvent<HTMLInputElement>) {
+  function onFileChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo" | "bakedSkeleton" | "bakedDepth", e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     if (!file) {
       updateMedia(which, { file: null, preview: "" });
@@ -702,7 +737,7 @@ function App() {
     updateMedia(which, { kind: "file", file, preview, url: "" });
   }
 
-  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo", value: string) {
+  function onURLChange(which: "reference" | "pose" | "qwenExtra" | "wanStart" | "wanFace" | "wanStartVideo" | "bakedSkeleton" | "bakedDepth", value: string) {
     updateMedia(which, { kind: "url", url: value, file: null, preview: value });
   }
 
@@ -1028,11 +1063,12 @@ function App() {
             <option value="wan2_2_i2v_extend_any_frame">wan2.2 i2v-extend-any-frame</option>
             <option value="wan2_2_dwpose_extract">wan2.2 Generate DWPose</option>
             <option value="wan2_2_animate">wan2.2 Animate Generate</option>
+            <option value="wan2_2_video_edit">wan2.2 Video Edit (V2V)</option>
           </select>
           <p className="muted compact">{modeSummary}</p>
         </section>
 
-        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face" || mode === "wan2_2_animate") && (
+        {(mode === "dual_pass_auto_pose" || mode === "pose_then_face_swap" || mode === "qwen_swap_face" || mode === "wan2_2_animate" || mode === "wan2_2_video_edit") && (
           <MediaCard
             title={mode === "qwen_swap_face" ? "Qwen Reference Face Image" : "Reference Image"}
             media={referenceMedia}
@@ -1056,6 +1092,59 @@ function App() {
             onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
             accept="video/*"
           />
+        )}
+
+        
+        {mode === "wan2_2_video_edit" && (
+          <>
+            <section className="card">
+              <h2>Execution Mode</h2>
+              <div className="inline">
+                <label className="toggle">
+                  <input type="radio" checked={wanVideoEditType === "extract"} onChange={() => setWanVideoEditType("extract")} />
+                  Extract & Generate
+                </label>
+                <label className="toggle">
+                  <input type="radio" checked={wanVideoEditType === "reuse"} onChange={() => setWanVideoEditType("reuse")} />
+                  Reuse Baked Output
+                </label>
+              </div>
+            </section>
+            {wanVideoEditType === "extract" ? (
+              <MediaCard
+                title="Raw Action Video (MP4)"
+                media={actionVideoMedia}
+                onKindChange={(kind) => setActionVideoMedia(prev => ({ ...prev, kind }))}
+                onFileChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    const file = e.target.files[0];
+                    setActionVideoMedia({ kind: "file", file, url: "", preview: URL.createObjectURL(file) });
+                  }
+                }}
+                onURLChange={(value) => setActionVideoMedia(prev => ({ ...prev, url: value }))}
+                accept="video/*"
+              />
+            ) : (
+              <>
+                <MediaCard
+                  title="Baked Skeleton Video"
+                  media={bakedSkeletonMedia}
+                  onKindChange={(kind) => updateMedia("bakedSkeleton", { kind })}
+                  onFileChange={(e) => onFileChange("bakedSkeleton", e)}
+                  onURLChange={(value) => onURLChange("bakedSkeleton", value)}
+                  accept="video/*"
+                />
+                <MediaCard
+                  title="Baked Depth Video"
+                  media={bakedDepthMedia}
+                  onKindChange={(kind) => updateMedia("bakedDepth", { kind })}
+                  onFileChange={(e) => onFileChange("bakedDepth", e)}
+                  onURLChange={(value) => onURLChange("bakedDepth", value)}
+                  accept="video/*"
+                />
+              </>
+            )}
+          </>
         )}
 
         {mode === "wan2_2_animate" && (
@@ -1315,7 +1404,7 @@ function App() {
         )}
 
         <section className="grid two">
-        {isWanAnimateMode && (
+        {(isWanAnimateMode || isWanVideoEditMode) && (
           <section className="card">
             <h2>Animation Generation Params</h2>
             <div className="inline">
@@ -1333,7 +1422,7 @@ function App() {
             </div>
           </section>
         )}
-          {(isWanMode || isWanAnimateMode) && !isWanExtractMode ? (
+          {(isWanMode || isWanAnimateMode || isWanVideoEditMode) && !isWanExtractMode ? (
             <section className="card">
               {isWanMode && (
                 <>
