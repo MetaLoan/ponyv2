@@ -1012,8 +1012,14 @@ def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None, re
             r = requests.get(f"{COMFY_API_URL}/history/{prompt_id}", timeout=30)
             r.raise_for_status()
             data = r.json()
-            if prompt_id in data and data[prompt_id].get("outputs"):
-                return data[prompt_id]
+            if prompt_id in data:
+                prompt_data = data[prompt_id]
+                status = prompt_data.get("status", {})
+                if status.get("status_str") == "error":
+                    error_info = status.get("messages", [{}])[0] if status.get("messages") else status
+                    raise RuntimeError(f"ComfyUI Execution Error: {json.dumps(error_info, ensure_ascii=False)}")
+                if prompt_data.get("outputs"):
+                    return prompt_data
             
             if f and runpod:
                 try:
