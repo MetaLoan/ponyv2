@@ -2006,7 +2006,7 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
                         output_mp4 = filepath
                         
     if not output_mp4:
-        raise RuntimeError("No output mp4 generated for video edit")
+        raise RuntimeError(f"No output mp4 generated for video edit. Keys: {list(outputs.keys())}. Dump: {str(outputs)[:2000]}")
         
     s3_key = f"outputs/{request_id}/wan_video_edit_{request_id}.mp4"
     final_url = upload_to_s3(output_mp4, s3_key)
