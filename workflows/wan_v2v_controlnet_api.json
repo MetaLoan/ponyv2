@@ -62,13 +62,13 @@
     }
   },
   "9": {
-    "class_type": "WanVideoControlNetLoader",
+    "class_type": "ControlNetLoader",
     "inputs": {
       "control_net_name": "wan2.2-ti2v-5b-controlnet-canny-v1.safetensors"
     }
   },
   "10": {
-    "class_type": "WanVideoControlNetLoader",
+    "class_type": "ControlNetLoader",
     "inputs": {
       "control_net_name": "wan2.2-ti2v-5b-controlnet-depth-v1.safetensors"
     }
@@ -98,9 +98,10 @@
     }
   },
   "13": {
-    "class_type": "WanModelLoader",
+    "class_type": "UNETLoader",
     "inputs": {
-      "model_name": "Wan2.1-Fun-1.3B-Control.safetensors"
+      "unet_name": "WAN2.2-NSFW-FastMove-V2-H.safetensors",
+      "weight_dtype": "fp8_e4m3fn_fast"
     }
   },
   "14": {

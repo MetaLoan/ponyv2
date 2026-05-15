@@ -1968,7 +1968,7 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
             prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
             
     if data.get("wan_unet_high_name"):
-        prompt["13"]["inputs"]["model_name"] = data.get("wan_unet_high_name")
+        prompt["13"]["inputs"]["unet_name"] = data.get("wan_unet_high_name")
     if data.get("wan_vae_name"):
         prompt["19"]["inputs"]["vae_name"] = data.get("wan_vae_name")
     if data.get("wan_clip_name"):
