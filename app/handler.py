@@ -1737,8 +1737,9 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
     if not video_url:
         raise ValueError("video_url is required for dwpose extract")
     video_filename = resolve_media_to_comfy_filename(video_url, "video")
-    prompt["1"]["inputs"]["video"] = video_filename
-    prompt["3"]["inputs"]["filename_prefix"] = f"dwpose_{request_id}"
+    prompt["72"]["inputs"]["video"] = video_filename
+    prompt["201"]["inputs"]["filename_prefix"] = f"dwpose_stickman_{request_id}"
+    prompt["202"]["inputs"]["filename_prefix"] = f"dwpose_face_{request_id}"
     
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
@@ -1960,7 +1961,10 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         "prompt": data.get("prompt", "这个角色在跳舞"),
         "i2v_resolution": i2v_resolution,
     }
-    for k in ("seed", "steps", "wan_loras", "wan_unet_high_name", "wan_vae_name", "wan_clip_vision_name"):
+    # Do NOT forward wan_unet_high_name / wan_vae_name / wan_clip_vision_name —
+    # animate workflow requires Wan2_2-Animate-14B (in diffusion_models/Wan22Animate/),
+    # which is a different model from the FastMove I2V unet the caller may specify.
+    for k in ("seed", "steps", "wan_loras"):
         if k in data:
             animate_payload[k] = data[k]
 
