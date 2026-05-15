@@ -1984,6 +1984,8 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         prompt["15"]["inputs"]["clip_name"] = data.get("wan_clip_vision_name")
             
     _check_cancelled(request_id)
+    with open("/tmp/prompt.json", "w", encoding="utf-8") as f:
+        json.dump(prompt, f, ensure_ascii=False, indent=2)
     prompt_id = queue_prompt(prompt)
     _register_active_prompt(request_id, prompt_id)
     try:
