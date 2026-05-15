@@ -1954,6 +1954,9 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         prompt["20"]["inputs"]["height"] = height
         prompt["20"]["inputs"]["length"] = frames
         
+        for nid in ["7", "8"]:
+            prompt.pop(nid, None)
+        
     if "16" in prompt:
         prompt["16"]["inputs"]["text"] = data.get("prompt", "A character")
     if "17" in prompt and "negative_prompt" in data:
