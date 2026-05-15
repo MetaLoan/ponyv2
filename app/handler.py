@@ -1932,10 +1932,10 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         
         prompt["20"]["inputs"]["width"] = width
         prompt["20"]["inputs"]["height"] = height
-        prompt["20"]["inputs"]["length"] = frames
+        prompt["20"]["inputs"]["num_frames"] = frames
         
-        prompt["11"]["inputs"]["image"] = ["7", 0]
-        prompt["12"]["inputs"]["image"] = ["8", 0]
+        prompt["11"]["inputs"]["control_images"] = ["7", 0]
+        prompt["12"]["inputs"]["control_images"] = ["8", 0]
         
         for nid in ["2", "3", "4", "5", "6"]:
             prompt.pop(nid, None)
@@ -1950,30 +1950,31 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         
         prompt["20"]["inputs"]["width"] = width
         prompt["20"]["inputs"]["height"] = height
-        prompt["20"]["inputs"]["length"] = frames
+        prompt["20"]["inputs"]["num_frames"] = frames
         
         for nid in ["7", "8"]:
             prompt.pop(nid, None)
         
-    if "16" in prompt:
-        prompt["16"]["inputs"]["text"] = data.get("prompt", "A character")
-    if "17" in prompt and "negative_prompt" in data:
-        prompt["17"]["inputs"]["text"] = data.get("negative_prompt")
+    if "14" in prompt:
+        prompt["14"]["inputs"]["positive_prompt"] = data.get("prompt", "A character")
+        if "negative_prompt" in data:
+            prompt["14"]["inputs"]["negative_prompt"] = data.get("negative_prompt")
         
     sampler_id = "21"
     if sampler_id in prompt:
         if "seed" in data:
-            prompt[sampler_id]["inputs"]["noise_seed"] = int(data["seed"])
+            prompt[sampler_id]["inputs"]["seed"] = int(data["seed"])
         if "steps" in data:
             prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
             
     if data.get("wan_unet_high_name"):
-        prompt["13"]["inputs"]["unet_name"] = data.get("wan_unet_high_name")
+        prompt["13"]["inputs"]["model"] = data.get("wan_unet_high_name")
     if data.get("wan_vae_name"):
-        prompt["19"]["inputs"]["vae_name"] = data.get("wan_vae_name")
+        prompt["19"]["inputs"]["model_name"] = data.get("wan_vae_name")
     if data.get("wan_clip_name"):
-        prompt["14"]["inputs"]["clip_name"] = data.get("wan_clip_name")
+        prompt["14"]["inputs"]["model_name"] = data.get("wan_clip_name")
     if data.get("wan_clip_vision_name"):
+        pass # Wait, clip vision is Node 15 in the JSON.
         prompt["15"]["inputs"]["clip_name"] = data.get("wan_clip_vision_name")
             
     _check_cancelled(request_id)
