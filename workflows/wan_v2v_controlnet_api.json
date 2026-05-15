@@ -127,7 +127,7 @@
   "13": {
     "class_type": "WanVideoModelLoader",
     "inputs": {
-      "model": "wan2.2-i2v-5b-fp8.safetensors",
+      "model": "WAN2.2-NSFW-FastMove-V2-H.safetensors",
       "base_precision": "bf16",
       "quantization": "disabled",
       "load_device": "offload_device"
@@ -136,7 +136,7 @@
   "14": {
     "class_type": "WanVideoTextEncodeCached",
     "inputs": {
-      "model_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "model_name": "umt5-xxl-enc-bf16.safetensors",
       "precision": "bf16",
       "positive_prompt": "A beautiful girl walking...",
       "negative_prompt": "low quality, distorted, deformed",
@@ -214,7 +214,12 @@
     "class_type": "WanVideoDecode",
     "inputs": {
       "samples": ["21", 0],
-      "vae": ["19", 0]
+      "vae": ["19", 0],
+      "enable_vae_tiling": true,
+      "tile_x": 512,
+      "tile_y": 512,
+      "tile_stride_x": 256,
+      "tile_stride_y": 256
     }
   },
   "23": {
