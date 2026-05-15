@@ -771,8 +771,18 @@ def validate_input(input_data: Dict) -> None:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
         pass
-    elif mode in ["wan2_2_animate", "wan2_2_dwpose_extract", "wan2_2_video_edit"]:
+    elif mode in ["wan2_2_animate", "wan2_2_dwpose_extract"]:
         pass
+    elif mode == "wan2_2_video_edit":
+        if not str(input_data.get("reference_image", "")).strip():
+            raise RuntimeError("reference_image is required for wan2_2_video_edit")
+        has_video = bool(str(input_data.get("video_url", "")).strip())
+        baked_face = input_data.get("baked_face_path") or input_data.get("baked_depth_path")
+        has_baked = bool(str(input_data.get("baked_skeleton_path", "")).strip()) and bool(str(baked_face or "").strip())
+        if not has_video and not has_baked:
+            raise RuntimeError(
+                "wan2_2_video_edit requires either video_url, or both baked_skeleton_path and baked_face_path"
+            )
     elif mode == "cancel_task":
         return  # cancel_task is handled before validate_input is called, but just in case
     elif mode == "tail_logs":
@@ -1899,138 +1909,73 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
 
 
 def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) -> dict:
-    
-    prompt = load_json(Path("/workspace/runpod-slim/ComfyUI/wan_v2v_controlnet_api.json"))
-    
-    char_img = data.get("reference_image")
-    if not char_img:
-        raise ValueError("reference_image is required")
-        
-    baked_skeleton_path = data.get("baked_skeleton_path")
-    baked_depth_path = data.get("baked_depth_path")
-    
-    res_str = str(data.get("resolution", "")).strip().upper()
-    width = 0
-    height = 0
-    if "*" in res_str:
-        try:
-            parts = res_str.split("*")
-            width = int(parts[0])
-            height = int(parts[1])
-        except Exception:
-            pass
-    if not width or not height:
-        if "480" in res_str:
-            width, height = 480, 832
-        elif "720" in res_str:
-            width, height = 720, 1280
-        else:
-            width = int(data.get("width", 720))
-            height = int(data.get("height", 1280))
-            
-    frames = int(data.get("frames", 49))
-            
-    if baked_skeleton_path and baked_depth_path:
-        # Mode 2: Reuse baked outputs
-        prompt["1"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
-        prompt["7"]["inputs"]["video"] = resolve_media_to_comfy_filename(baked_skeleton_path, "skeleton")
-        prompt["8"]["inputs"]["video"] = resolve_media_to_comfy_filename(baked_depth_path, "depth")
-        
-        prompt["20"]["inputs"]["width"] = width
-        prompt["20"]["inputs"]["height"] = height
-        prompt["20"]["inputs"]["num_frames"] = frames
-        
-        prompt["11"]["inputs"]["control_images"] = ["7", 0]
-        prompt["12"]["inputs"]["control_images"] = ["8", 0]
-        
-        for nid in ["2", "3", "4", "5", "6"]:
-            prompt.pop(nid, None)
+    """Motion-transfer V2V: extract DWPose from source video, then run Wan2.2-Animate.
+
+    Pipeline:
+      1. (skipped if baked paths provided) dwpose_extract on data["video_url"]
+         -> stickman.mp4 (pose) + face.mp4
+      2. wan2_2_animate with reference_image as character + pose/face videos
+    Returns the final video plus the baked pose/face URLs so subsequent runs can
+    skip step 1 by passing baked_skeleton_path + baked_face_path.
+    """
+    reference_image = data.get("reference_image")
+    if not reference_image:
+        raise ValueError("reference_image is required for wan2_2_video_edit")
+
+    baked_skeleton = data.get("baked_skeleton_path")
+    baked_face = data.get("baked_face_path") or data.get("baked_depth_path")
+
+    if baked_skeleton and baked_face:
+        pose_video_url = baked_skeleton
+        face_video_url = baked_face
+        extract_prompt_id = None
     else:
-        # Mode 1: Extract and generate
-        raw_video_path = data.get("video_url")
-        if not raw_video_path:
-            raise ValueError("video_url is required when baked paths are not provided")
-            
-        prompt["1"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
-        prompt["2"]["inputs"]["video"] = resolve_media_to_comfy_filename(raw_video_path, "video")
-        
-        prompt["20"]["inputs"]["width"] = width
-        prompt["20"]["inputs"]["height"] = height
-        prompt["20"]["inputs"]["num_frames"] = frames
-        
-        for nid in ["7", "8"]:
-            prompt.pop(nid, None)
-        
-    if "14" in prompt:
-        prompt["14"]["inputs"]["positive_prompt"] = data.get("prompt", "A character")
-        if "negative_prompt" in data:
-            prompt["14"]["inputs"]["negative_prompt"] = data.get("negative_prompt")
-        
-    sampler_id = "21"
-    if sampler_id in prompt:
-        if "seed" in data:
-            prompt[sampler_id]["inputs"]["seed"] = int(data["seed"])
-        if "steps" in data:
-            prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
-            
-    if data.get("wan_unet_high_name"):
-        prompt["13"]["inputs"]["model"] = data.get("wan_unet_high_name")
-    if data.get("wan_vae_name"):
-        prompt["19"]["inputs"]["model_name"] = data.get("wan_vae_name")
-    if data.get("wan_clip_name"):
-        prompt["14"]["inputs"]["model_name"] = data.get("wan_clip_name")
-    if data.get("wan_clip_vision_name"):
-        pass # Wait, clip vision is Node 15 in the JSON.
-        prompt["15"]["inputs"]["clip_name"] = data.get("wan_clip_vision_name")
-            
-    _check_cancelled(request_id)
-    with open("/tmp/prompt.json", "w", encoding="utf-8") as f:
-        json.dump(prompt, f, ensure_ascii=False, indent=2)
-    prompt_id = queue_prompt(prompt)
-    _register_active_prompt(request_id, prompt_id)
-    try:
-        history_obj = wait_history(prompt_id, event=event, request_id=request_id)
-    finally:
-        _unregister_active_prompt(request_id)
-        
-    outputs = history_obj.get("outputs", {})
-    output_mp4 = None
-    output_skeleton = None
-    output_depth = None
-    
-    for nid, nout in outputs.items():
-        if "gifs" in nout:
-            for vid_info in nout["gifs"]:
-                fname = vid_info.get("filename", "")
-                filepath = COMFY_OUTPUT_DIR / vid_info.get("subfolder", "") / fname
-                if filepath.exists():
-                    if "Wan2_Skeleton_Output" in fname:
-                        output_skeleton = filepath
-                    elif "Wan2_Depth_Output" in fname:
-                        output_depth = filepath
-                    elif "Wan2_Final_Result" in fname:
-                        output_mp4 = filepath
-                    else:
-                        output_mp4 = filepath
-                        
-    if not output_mp4:
-        raise RuntimeError(f"No output mp4 generated for video edit. Keys: {list(outputs.keys())}. Dump: {str(outputs)[:2000]}")
-        
-    s3_key = f"outputs/{request_id}/wan_video_edit_{request_id}.mp4"
-    final_url = upload_to_s3(output_mp4, s3_key)
-    
+        if not data.get("video_url"):
+            raise ValueError(
+                "video_url is required when baked_skeleton_path/baked_face_path are not provided"
+            )
+        extract_resp = _generate_wan_dwpose_extract(
+            {"video_url": data["video_url"]}, request_id, event=event
+        )
+        pose_video_url = extract_resp["pose_video_url"]
+        face_video_url = extract_resp["face_video_url"]
+        extract_prompt_id = extract_resp.get("prompt_id")
+
+    res_str = str(data.get("resolution") or data.get("i2v_resolution") or "").strip().upper()
+    if "480" in res_str:
+        i2v_resolution = "480*832"
+    elif "720" in res_str:
+        i2v_resolution = "720*1280"
+    elif "*" in res_str:
+        i2v_resolution = res_str
+    else:
+        width = int(data.get("width", 720))
+        height = int(data.get("height", 1280))
+        i2v_resolution = f"{width}*{height}"
+
+    animate_payload = {
+        "character_image_url": reference_image,
+        "pose_video_url": pose_video_url,
+        "face_video_url": face_video_url,
+        "prompt": data.get("prompt", "这个角色在跳舞"),
+        "i2v_resolution": i2v_resolution,
+    }
+    for k in ("seed", "steps", "wan_loras", "wan_unet_high_name", "wan_vae_name", "wan_clip_vision_name"):
+        if k in data:
+            animate_payload[k] = data[k]
+
+    animate_resp = _generate_wan_animate(animate_payload, request_id, event=event)
+
     resp = {
         "ok": True,
-        "video_url": final_url,
+        "video_url": animate_resp["video_url"],
         "request_id": request_id,
-        "prompt_id": prompt_id
+        "prompt_id": animate_resp.get("prompt_id"),
+        "baked_skeleton_url": pose_video_url,
+        "baked_face_url": face_video_url,
     }
-    
-    if output_skeleton:
-        resp["baked_skeleton_url"] = upload_to_s3(output_skeleton, f"outputs/{request_id}/skeleton_{request_id}.mp4")
-    if output_depth:
-        resp["baked_depth_url"] = upload_to_s3(output_depth, f"outputs/{request_id}/depth_{request_id}.mp4")
-        
+    if extract_prompt_id:
+        resp["extract_prompt_id"] = extract_prompt_id
     return resp
 
 
