@@ -101,7 +101,7 @@
     }
   },
   "11": {
-    "class_type": "WanVideoControlnetApply",
+    "class_type": "WanVideoControlnet",
     "inputs": {
       "model": ["13", 0],
       "controlnet": ["9", 0],
@@ -113,7 +113,7 @@
     }
   },
   "12": {
-    "class_type": "WanVideoControlnetApply",
+    "class_type": "WanVideoControlnet",
     "inputs": {
       "model": ["11", 0],
       "controlnet": ["10", 0],
