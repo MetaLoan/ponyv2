@@ -14,12 +14,11 @@
     }
   },
   "3": {
-    "class_type": "DWPreprocessor",
+    "class_type": "CannyEdgePreprocessor",
     "inputs": {
       "image": ["2", 0],
-      "detect_hand": "enable",
-      "detect_body": "enable",
-      "detect_face": "enable"
+      "low_threshold": 100,
+      "high_threshold": 200
     }
   },
   "4": {
@@ -65,13 +64,13 @@
   "9": {
     "class_type": "WanVideoControlNetLoader",
     "inputs": {
-      "control_net_name": "wan2.1_openpose.safetensors"
+      "control_net_name": "wan2.2-ti2v-5b-controlnet-canny-v1.safetensors"
     }
   },
   "10": {
     "class_type": "WanVideoControlNetLoader",
     "inputs": {
-      "control_net_name": "wan2.1_depth.safetensors"
+      "control_net_name": "wan2.2-ti2v-5b-controlnet-depth-v1.safetensors"
     }
   },
   "11": {
