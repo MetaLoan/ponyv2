@@ -606,7 +606,9 @@ def sync_requested_models(prompt: Dict, input_data: Dict) -> List[str]:
     return synced
 
 
-def load_json(path: Path) -> Dict:
+def load_json(path) -> Dict:
+    if isinstance(path, str):
+        path = Path(path)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -768,6 +770,8 @@ def validate_input(input_data: Dict) -> None:
         if int(input_data.get("frames", 0) or 0) <= 0:
             raise RuntimeError("frames must be greater than 0 for wan2_2_i2v_extend_any_frame")
     elif mode == "qwen_edit_face":
+        pass
+    elif mode in ["wan2_2_animate", "wan2_2_dwpose_extract", "wan2_2_video_edit"]:
         pass
     elif mode == "cancel_task":
         return  # cancel_task is handled before validate_input is called, but just in case
@@ -1708,8 +1712,6 @@ def _apply_wan_workflow_defaults(prompt: Dict, data: Dict, current_start_image: 
 
 
 def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None) -> dict:
-    from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
-    from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt, _summarize_history
     import tempfile, subprocess
     
     prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_dwpose_extract_api.json")
@@ -1762,8 +1764,6 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
 
 
 def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> dict:
-    from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
-    from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt, _summarize_history
     import tempfile, subprocess
     
     prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_animate_api.json")
@@ -1893,10 +1893,8 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
 
 
 def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) -> dict:
-    from utils import load_json, resolve_media_to_comfy_filename, upload_to_s3
-    from handler import COMFY_OUTPUT_DIR, queue_prompt, wait_history, _check_cancelled, _register_active_prompt, _unregister_active_prompt
     
-    prompt = load_json("/workspace/runpod-slim/ComfyUI/wan_v2v_controlnet_api.json")
+    prompt = load_json(Path("/workspace/runpod-slim/ComfyUI/wan_v2v_controlnet_api.json"))
     
     char_img = data.get("reference_image")
     if not char_img:
