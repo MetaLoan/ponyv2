@@ -104,6 +104,7 @@ COPY workflows/pulid_sdxl_workflow_web_api.json /workspace/runpod-slim/ComfyUI/p
 COPY workflows/wan2_2_i2v_extend_any_frame_api.json /workspace/runpod-slim/ComfyUI/wan2_2_i2v_extend_any_frame_api.json
 COPY workflows/wan2_2_dwpose_extract_api.json /workspace/runpod-slim/ComfyUI/wan2_2_dwpose_extract_api.json
 COPY workflows/wan2_2_animate_api.json /workspace/runpod-slim/ComfyUI/wan2_2_animate_api.json
+COPY workflows/wan_v2v_controlnet_api.json /workspace/runpod-slim/ComfyUI/wan_v2v_controlnet_api.json
 
 RUN chmod +x /workspace/runpod-slim/scripts/install_v16_models.sh
 
