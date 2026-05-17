@@ -19,6 +19,20 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
+      - name: Free disk space
+        # The CUDA 12.8 devel base + sageattention source build needs more than
+        # the ubuntu-latest runner's default ~14GB free disk. Free ~20GB by
+        # removing things our build never touches.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
       - name: Checkout
         uses: actions/checkout@v4
 

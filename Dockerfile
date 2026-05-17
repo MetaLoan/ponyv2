@@ -35,8 +35,9 @@ RUN python3 -m pip install -U pip setuptools wheel && \
 
 # SageAttention 2.x from source — PyPI only ships 1.0.6 (pre-Blackwell).
 # Build with sm_120 so the Triton kernels load on RTX 5090. Source build takes
-# 5-10 min but only runs once at image build.
-RUN TORCH_CUDA_ARCH_LIST="12.0" python3 -m pip install --no-build-isolation \
+# 5-10 min but only runs once at image build. MAX_JOBS limits parallel nvcc
+# invocations so the GHA runner (7GB RAM) doesn't OOM.
+RUN TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=2 python3 -m pip install --no-build-isolation \
     git+https://github.com/thu-ml/SageAttention.git
 
 # ComfyUI base
