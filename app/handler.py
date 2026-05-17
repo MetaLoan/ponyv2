@@ -1835,11 +1835,13 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
 
     # Model loader: the on-disk file is fp8 scaled, but
     # quantization="disabled" causes Kijai's loader to de-scale it back to
-    # fp16 (~28GB for a 14B model). That's what's triggering a 19.54 GiB
-    # single-shot allocation in the sampler. Switch to fp8_e4m3fn so the
-    # weights stay quantized on the GPU.
+    # fp16 (~28GB for a 14B model). Set fp8_e4m3fn so weights stay quantized.
+    # Also switch attention away from "sageattn" — its pre-compiled Triton
+    # kernels target older arches (sm_80..sm_90) and fail with
+    # "device kernel image is invalid" on RTX 5090 / Blackwell sm_120.
     if "94" in prompt:
         prompt["94"]["inputs"]["quantization"] = "fp8_e4m3fn"
+        prompt["94"]["inputs"]["attention_mode"] = "sdpa"
 
     # Optional block-swap override (workflow default is blocks_to_swap=25,
     # which fits 32GB / 24GB GPUs comfortably). Only override if the caller
