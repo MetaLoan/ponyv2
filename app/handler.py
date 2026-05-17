@@ -2076,18 +2076,27 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         face_video_url = extract_resp["face_video_url"]
         extract_prompt_id = extract_resp.get("prompt_id")
 
+    # Orientation hint: portrait by default (animate's most common training case),
+    # but width > height in the explicit dims means landscape.
+    explicit_w = data.get("width")
+    explicit_h = data.get("height")
+    is_landscape = (
+        isinstance(explicit_w, (int, float)) and isinstance(explicit_h, (int, float))
+        and explicit_w > explicit_h
+    )
+
     res_str = str(data.get("resolution") or data.get("i2v_resolution") or "").strip().upper()
-    if "480" in res_str:
-        i2v_resolution = "480*832"
+    if "*" in res_str:
+        # Explicit WxH like "832*480" — honor as-is.
+        i2v_resolution = res_str
+    elif "480" in res_str:
+        i2v_resolution = "832*480" if is_landscape else "480*832"
     elif "720" in res_str:
-        i2v_resolution = "720*1280"
+        i2v_resolution = "1280*720" if is_landscape else "720*1280"
     elif "1080" in res_str:
         # 1080P × any frame count on a 32GB GPU OOMs the animate sampler.
-        # Downgrade to 480P; the proxy fills in "1080P" by default for other
-        # modes that the underlying model handles, but Wan2.2-Animate doesn't.
-        i2v_resolution = "480*832"
-    elif "*" in res_str:
-        i2v_resolution = res_str
+        # Downgrade to 480P, preserving requested orientation.
+        i2v_resolution = "832*480" if is_landscape else "480*832"
     else:
         width = int(data.get("width", 720))
         height = int(data.get("height", 1280))
