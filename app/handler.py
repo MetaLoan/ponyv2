@@ -2022,14 +2022,20 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # GPUs at 480p without manual override.
     params = data.get("parameters") or {}
     requested_frames = int(data.get("frames") or params.get("frames") or 49)
-    print(
-        f"[DEBUG v2v] data.keys={sorted(data.keys())} "
-        f"data.frames={data.get('frames')!r} "
-        f"params.keys={sorted(params.keys())} "
-        f"params.frames={params.get('frames')!r} "
-        f"-> requested_frames={requested_frames}",
-        flush=True,
-    )
+    # Write a debug breadcrumb to /tmp because the runpod entry pid 1 stdout
+    # is captured into a pipe we can't tail from the worker shell.
+    try:
+        with open("/tmp/v2v_debug.json", "w", encoding="utf-8") as _f:
+            json.dump({
+                "data_keys": sorted(list(data.keys())),
+                "data_frames": data.get("frames"),
+                "params_keys": sorted(list(params.keys())),
+                "params_frames": params.get("frames"),
+                "requested_frames": requested_frames,
+                "data_full": {k: (str(v)[:200] if isinstance(v, str) else v) for k, v in data.items()},
+            }, _f, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        pass
 
     if baked_skeleton and baked_face:
         pose_video_url = baked_skeleton
