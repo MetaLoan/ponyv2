@@ -372,11 +372,15 @@ function App() {
       mode,
       prompt: activePrompt,
       negative_prompt: negativePrompt,
-      enable_lora: enableLora,
-      loras: cleanLoras,
-      wan_loras: cleanLoras,
       async: true
     };
+    // SDXL LoRAs only apply to non-Wan modes. Wan modes have their own
+    // wan_loras config (set per-mode below). Avoid leaking a SDXL detailer
+    // LoRA into wan_loras (would fail to load on the 14B animate model).
+    if (!isWanVideoEditMode && !isWanAnimateMode && !isWanExtractMode) {
+      body.enable_lora = enableLora;
+      body.loras = cleanLoras;
+    }
     if (isWanMode || isWanAnimateMode) {
       if (isWanMode) {
         if (wanInputType === "image") {
@@ -410,6 +414,32 @@ function App() {
       body.steps = steps;
       body.seed = seed;
       body.cfg = cfg;
+    } else if (isWanVideoEditMode) {
+      // V2V: only Wan-Animate-relevant fields. The actual values are set in
+      // the submit handler from the V2V-dedicated state (wanV2v*). Here we
+      // only emit the minimal preview-payload fields so the JSON preview
+      // doesn't show ckpt_name / pulid_* / cn_* / etc.
+      const v2vWidth = wanV2vResolution === "720P" ? 720 : 480;
+      const v2vHeight = wanV2vResolution === "720P" ? 1280 : 832;
+      body.i2v_resolution = wanV2vResolution;
+      body.width = v2vWidth;
+      body.height = v2vHeight;
+      body.frames = wanV2vFrames;
+      body.seed = seed;
+      body.steps = steps;
+      body.cfg = wanV2vCfg;
+      body.shift = wanV2vShift;
+      body.scheduler = wanV2vScheduler;
+      body.frame_window_size = wanV2vFrameWindowSize;
+      body.attention_mode = wanV2vAttentionMode;
+      body.blocks_to_swap = wanV2vBlocksToSwap;
+      body.pose_strength = wanV2vPoseStrength;
+      body.face_strength = wanV2vFaceStrength;
+      body.colormatch = wanV2vColormatch;
+      body.wan_loras = [
+        { name: "WanAnimate_relight_lora_fp16.safetensors", strength_model: wanV2vRelightStrength },
+        { name: "lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors", strength_model: wanV2vLightx2vStrength },
+      ];
     } else {
       body.width = width;
       body.height = height;
@@ -556,6 +586,22 @@ function App() {
     wanVaeName,
     wanClipVisionName,
     wanClipName,
+    isWanAnimateMode,
+    isWanExtractMode,
+    isWanVideoEditMode,
+    wanV2vFrames,
+    wanV2vResolution,
+    wanV2vCfg,
+    wanV2vShift,
+    wanV2vScheduler,
+    wanV2vFrameWindowSize,
+    wanV2vAttentionMode,
+    wanV2vBlocksToSwap,
+    wanV2vPoseStrength,
+    wanV2vFaceStrength,
+    wanV2vColormatch,
+    wanV2vRelightStrength,
+    wanV2vLightx2vStrength,
   ]);
 
   const modeSummary = {
@@ -1534,7 +1580,7 @@ function App() {
             ) : (
               <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
             )}
-            {!isWanAnimateMode && <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />}
+            {!isWanAnimateMode && !isWanVideoEditMode && <textarea rows={3} value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} />}
             {mode === "qwen_swap_face" && (
               <div className="stack">
                 <label>
@@ -1555,7 +1601,7 @@ function App() {
         )}
 
         <section className="grid two">
-        {(isWanAnimateMode || isWanVideoEditMode) && (
+        {isWanAnimateMode && (
           <section className="card">
             <h2>Animation Generation Params</h2>
             <div className="inline">
@@ -1573,7 +1619,9 @@ function App() {
             </div>
           </section>
         )}
-          {(isWanMode || isWanAnimateMode || isWanVideoEditMode) && !isWanExtractMode ? (
+        {/* V2V uses its dedicated "Wan V2V Parameters" + "Advanced" cards above,
+            and intentionally hides the SDXL-flavored cards below. */}
+          {(isWanMode || isWanAnimateMode) && !isWanExtractMode && !isWanVideoEditMode ? (
             <section className="card">
               {isWanMode && (
                 <>
@@ -1711,7 +1759,7 @@ function App() {
                 </div>
               </details>
             </section>
-          ) : !isWanExtractMode && !isWanAnimateMode ? (
+          ) : !isWanExtractMode && !isWanAnimateMode && !isWanVideoEditMode ? (
             <section className="card">
               <h2>Model Selection</h2>
               <label>
@@ -1798,7 +1846,7 @@ function App() {
             </section>
           )}
 
-          {!isWanMode && (
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && !isWanVideoEditMode && (
             <section className="card">
               <h2>Stage Params</h2>
               <div className="inline">
@@ -1851,7 +1899,7 @@ function App() {
         </section>
 
         <section className="grid two">
-          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && (
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && !isWanVideoEditMode && (
             <section className="card">
               <h2>Output</h2>
               <div className="inline">
@@ -1878,7 +1926,7 @@ function App() {
                 Core inputs stay above. Advanced video controls are hidden in the WAN Advanced panel.
               </p>
             </section>
-          ) : (!isWanMode && !isWanAnimateMode && !isWanExtractMode) ? (
+          ) : (!isWanMode && !isWanAnimateMode && !isWanExtractMode && !isWanVideoEditMode) ? (
             <section className="card">
               <h2>I2V Postprocess</h2>
               <label className="toggle">
@@ -1935,7 +1983,7 @@ function App() {
           ) : null}
 
 
-          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && (
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && !isWanVideoEditMode && (
             <section className="card">
               <h2>PuLID</h2>
               <label className="toggle">
@@ -1959,7 +2007,7 @@ function App() {
             </section>
           )}
 
-          {!isWanMode && !isWanAnimateMode && !isWanExtractMode &&
+          {!isWanMode && !isWanAnimateMode && !isWanExtractMode && !isWanVideoEditMode &&
             mode !== "text_only" &&
             mode !== "qwen_swap_face" &&
             mode !== "qwen_pose_fusion" &&
