@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+# CUDA 12.8 devel base — includes nvcc 12.8, which is required to compile
+# SageAttention 2.x kernels for Blackwell sm_120 (RTX 5090).
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ARG GIT_SHA=unknown
 
