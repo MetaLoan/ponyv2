@@ -1802,8 +1802,16 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
 
 def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> dict:
     import tempfile, subprocess
-    
+
     prompt = load_json("/workspace/runpod-slim/ComfyUI/wan2_2_animate_api.json")
+
+    # Workflow was exported from a ComfyUI that had differently-named model files.
+    # Override with the names actually installed in this runtime image (see
+    # scripts/download_wan_runtime_models.sh).
+    if "60" in prompt:
+        prompt["60"]["inputs"]["model_name"] = "wan_2.1_vae.safetensors"
+    if "61" in prompt:
+        prompt["61"]["inputs"]["model_name"] = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
     
     # Inputs
     pose_url = data.get("pose_video_url")
