@@ -1821,7 +1821,12 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if "60" in prompt:
         prompt["60"]["inputs"]["model_name"] = "wan_2.1_vae.safetensors"
     if "61" in prompt:
-        prompt["61"]["inputs"]["model_name"] = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+        # Kijai's WanVideoTextEncodeCached explicitly rejects fp8 SCALED text
+        # encoders ("Invalid T5 text encoder model, fp8 scaled is not supported
+        # by this node"). Use the bf16 version that the workflow originally
+        # referenced; it must be present at
+        # /workspace/runpod-slim/ComfyUI/models/text_encoders/.
+        prompt["61"]["inputs"]["model_name"] = "umt5-xxl-enc-bf16.safetensors"
     
     # Inputs
     pose_url = data.get("pose_video_url")
