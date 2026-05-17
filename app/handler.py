@@ -1951,6 +1951,18 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     for stub_id in ("87", "89", "91", "92"):
         prompt.pop(stub_id, None)
 
+    # DEBUG: dump animate prompt so we can verify our overrides actually
+    # landed (handler hot-patch verification).
+    try:
+        with open("/tmp/animate_prompt.json", "w", encoding="utf-8") as _f:
+            json.dump(prompt, _f, ensure_ascii=False, indent=2)
+        print(f"[DEBUG animate] q={prompt.get('94',{}).get('inputs',{}).get('quantization')!r} "
+              f"text_dev={prompt.get('61',{}).get('inputs',{}).get('device')!r} "
+              f"fws={prompt.get('84',{}).get('inputs',{}).get('frame_window_size')!r}",
+              flush=True)
+    except Exception:
+        pass
+
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
     _register_active_prompt(request_id, prompt_id)
