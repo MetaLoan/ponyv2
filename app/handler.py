@@ -2022,6 +2022,14 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # GPUs at 480p without manual override.
     params = data.get("parameters") or {}
     requested_frames = int(data.get("frames") or params.get("frames") or 49)
+    print(
+        f"[DEBUG v2v] data.keys={sorted(data.keys())} "
+        f"data.frames={data.get('frames')!r} "
+        f"params.keys={sorted(params.keys())} "
+        f"params.frames={params.get('frames')!r} "
+        f"-> requested_frames={requested_frames}",
+        flush=True,
+    )
 
     if baked_skeleton and baked_face:
         pose_video_url = baked_skeleton
