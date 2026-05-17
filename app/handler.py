@@ -417,6 +417,14 @@ def _upload_bytes_to_r2(s3_client, cfg: Dict, key: str, data: bytes, content_typ
     return f"{cfg['public_url']}/{key}"
 
 
+def _upload_file_to_r2(file_path, key: str, content_type: str = "video/mp4") -> str:
+    """Read a local file and upload it to R2. Returns the public URL."""
+    s3_client, cfg = get_r2_client_and_config()
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return _upload_bytes_to_r2(s3_client, cfg, key, data, content_type)
+
+
 def _local_model_path(kind: str, name: str) -> Path:
     folder = MODEL_KIND_TO_FOLDER[kind]
     return COMFY_ROOT / "models" / folder / name
@@ -1780,8 +1788,8 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
         
     s3_key_pose = f"outputs/{request_id}/dwpose_stickman_{request_id}.mp4"
     s3_key_face = f"outputs/{request_id}/dwpose_face_{request_id}.mp4"
-    pose_url = upload_to_s3(pose_mp4, s3_key_pose)
-    face_url = upload_to_s3(face_mp4, s3_key_face)
+    pose_url = _upload_file_to_r2(pose_mp4, s3_key_pose)
+    face_url = _upload_file_to_r2(face_mp4, s3_key_face)
     
     return {
         "ok": True,
@@ -1911,7 +1919,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
         raise RuntimeError("No output mp4 generated for animate")
         
     s3_key = f"outputs/{request_id}/wan_animate_{request_id}.mp4"
-    final_url = upload_to_s3(output_mp4, s3_key)
+    final_url = _upload_file_to_r2(output_mp4, s3_key)
     
     return {
         "ok": True,
