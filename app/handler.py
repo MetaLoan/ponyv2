@@ -2105,13 +2105,26 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # animate workflow requires Wan2_2-Animate-14B (in diffusion_models/Wan22Animate/),
     # which is a different model from the FastMove I2V unet the caller may specify.
     for k in (
-        "seed", "steps", "cfg", "shift", "scheduler", "denoise_strength",
+        "seed", "steps", "cfg", "shift", "denoise_strength",
         "wan_loras",
         "attention_mode", "blocks_to_swap",
         "pose_strength", "face_strength", "colormatch",
     ):
         if k in data:
             animate_payload[k] = data[k]
+    # Scheduler — the proxy injects SDXL defaults ("karras", etc.) for every
+    # request, but Kijai's WanVideoSampler only accepts its own ~21 schedulers
+    # (dpm++_sde, dpm++_2m_sde, unipc, euler, etc.). Whitelist what we know is
+    # supported and silently drop anything else so the workflow default wins.
+    _WAN_SCHEDULER_WHITELIST = {
+        "unipc", "unipc_bh1", "unipc_bh2", "dpm++_sde", "dpm++_sde_gpu",
+        "dpm++_2m", "dpm++_2m_sde", "euler", "euler_a", "euler_pp",
+        "ddim", "ddpm", "lcm", "flowmatch_causvid", "flowmatch_distill",
+        "flowmatch_pusa", "flowmatch_fast", "uniwave",
+    }
+    sched_in = data.get("scheduler")
+    if isinstance(sched_in, str) and sched_in.strip() in _WAN_SCHEDULER_WHITELIST:
+        animate_payload["scheduler"] = sched_in.strip()
 
     animate_resp = _generate_wan_animate(animate_payload, request_id, event=event)
 
