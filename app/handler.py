@@ -1896,6 +1896,13 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
                 prompt["121"]["inputs"][l_key] = "none"
                 prompt["121"]["inputs"][s_key] = 0
     
+    # Drop side-effect VRAM-purge stub nodes — easy cleanGpuUsed and
+    # LayerUtility:PurgeVRAM are from easy-use / ComfyUI-LayerStyle packs
+    # that aren't installed in the runtime image. They have no downstream
+    # consumers, so removing them changes nothing observable.
+    for stub_id in ("87", "89", "91", "92"):
+        prompt.pop(stub_id, None)
+
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
     _register_active_prompt(request_id, prompt_id)
@@ -1903,7 +1910,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
         history_obj = wait_history(prompt_id, event=event, request_id=request_id)
     finally:
         _unregister_active_prompt(request_id)
-        
+
     outputs = history_obj.get("outputs", {})
     output_mp4 = None
     for nid, nout in outputs.items():
@@ -1914,7 +1921,7 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
                 if filepath.exists():
                     output_mp4 = filepath
                     break
-    
+
     if not output_mp4:
         raise RuntimeError("No output mp4 generated for animate")
         
