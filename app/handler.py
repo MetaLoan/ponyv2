@@ -1894,6 +1894,8 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
     if "84" in prompt:
         prompt["84"]["inputs"]["width"] = width
         prompt["84"]["inputs"]["height"] = height
+        if "frame_window_size" in data:
+            prompt["84"]["inputs"]["frame_window_size"] = int(data["frame_window_size"])
     # Node 14 is optional or from a different workflow version
     if "14" in prompt:
         if "image_gen_width" in prompt["14"]["inputs"]:
@@ -1994,6 +1996,12 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     baked_skeleton = data.get("baked_skeleton_path")
     baked_face = data.get("baked_face_path") or data.get("baked_depth_path")
 
+    # Cap the number of frames flowing through the pipeline. The animate
+    # workflow's attention cost is roughly quadratic in (frames * spatial
+    # tokens), so without an explicit cap we'd extract the whole source video
+    # and OOM in the sampler. Default to 81 (one animate window).
+    requested_frames = int(data.get("frames", 81) or 81)
+
     if baked_skeleton and baked_face:
         pose_video_url = baked_skeleton
         face_video_url = baked_face
@@ -2004,7 +2012,9 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
                 "video_url is required when baked_skeleton_path/baked_face_path are not provided"
             )
         extract_resp = _generate_wan_dwpose_extract(
-            {"video_url": data["video_url"]}, request_id, event=event
+            {"video_url": data["video_url"], "frame_load_cap": requested_frames},
+            request_id,
+            event=event,
         )
         pose_video_url = extract_resp["pose_video_url"]
         face_video_url = extract_resp["face_video_url"]
@@ -2028,6 +2038,7 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         "face_video_url": face_video_url,
         "prompt": data.get("prompt", "这个角色在跳舞"),
         "i2v_resolution": i2v_resolution,
+        "frame_window_size": min(requested_frames, 81),
     }
     # Do NOT forward wan_unet_high_name / wan_vae_name / wan_clip_vision_name —
     # animate workflow requires Wan2_2-Animate-14B (in diffusion_models/Wan22Animate/),
