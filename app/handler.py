@@ -1827,6 +1827,18 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
         # referenced; it must be present at
         # /workspace/runpod-slim/ComfyUI/models/text_encoders/.
         prompt["61"]["inputs"]["model_name"] = "umt5-xxl-enc-bf16.safetensors"
+
+    # Block swap config — Wan 2.2 14B at 480p OOMs on 20GB GPUs with the
+    # workflow's defaults (blocks_to_swap=25, embeddings on GPU). Push swap to
+    # 35/40 and offload img/txt embeddings to keep the sampler step under VRAM.
+    if "57" in prompt:
+        prompt["57"]["inputs"]["blocks_to_swap"] = int(data.get("blocks_to_swap", 35))
+        prompt["57"]["inputs"]["offload_img_emb"] = True
+        prompt["57"]["inputs"]["offload_txt_emb"] = True
+    # Animate embeds: force_offload=true releases VAE/clip after encode.
+    if "84" in prompt:
+        prompt["84"]["inputs"]["force_offload"] = True
+        prompt["84"]["inputs"]["tiled_vae"] = True
     
     # Inputs
     pose_url = data.get("pose_video_url")
