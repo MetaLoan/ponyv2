@@ -1034,7 +1034,17 @@ def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None, re
                 prompt_data = data[prompt_id]
                 status = prompt_data.get("status", {})
                 if status.get("status_str") == "error":
-                    error_info = status.get("messages", [{}])[0] if status.get("messages") else status
+                    # ComfyUI history.messages is a list of [event_type, payload] tuples.
+                    # The first entry is always "execution_start"; the real error lives in
+                    # "execution_error" / "execution_interrupted". Find it explicitly.
+                    msgs = status.get("messages") or []
+                    error_info = None
+                    for m in msgs:
+                        if isinstance(m, list) and len(m) >= 2 and m[0] in ("execution_error", "execution_interrupted"):
+                            error_info = m[1]
+                            break
+                    if error_info is None:
+                        error_info = {"messages": msgs, "status": status}
                     raise RuntimeError(f"ComfyUI Execution Error: {json.dumps(error_info, ensure_ascii=False)}")
                 if prompt_data.get("outputs"):
                     return prompt_data
