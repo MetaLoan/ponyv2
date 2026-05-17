@@ -2016,12 +2016,15 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # Cap the number of frames flowing through the pipeline. The animate
     # workflow's attention cost is roughly quadratic in (frames * spatial
     # tokens), so without an explicit cap we'd extract the whole source video
-    # and OOM in the sampler. Some proxies put per-request knobs under
-    # "parameters" instead of merging into the top-level input dict, so check
-    # both. Default conservatively at 49 frames (~3s @ 16fps) to fit 32GB
-    # GPUs at 480p without manual override.
+    # and OOM in the sampler.
+    #
+    # The proxy that fronts this endpoint injects project-wide defaults
+    # (e.g. frames=161, i2v_resolution="1080P") that are appropriate for
+    # other modes but blow up animate. Always clamp the resolved frame
+    # count to <= 49 (~3s @ 16fps) regardless of what comes in.
     params = data.get("parameters") or {}
-    requested_frames = int(data.get("frames") or params.get("frames") or 49)
+    raw_frames = int(data.get("frames") or params.get("frames") or 49)
+    requested_frames = max(1, min(raw_frames, 49))
     # Write a debug breadcrumb to /tmp because the runpod entry pid 1 stdout
     # is captured into a pipe we can't tail from the worker shell.
     try:
@@ -2060,6 +2063,11 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         i2v_resolution = "480*832"
     elif "720" in res_str:
         i2v_resolution = "720*1280"
+    elif "1080" in res_str:
+        # 1080P × any frame count on a 32GB GPU OOMs the animate sampler.
+        # Downgrade to 480P; the proxy fills in "1080P" by default for other
+        # modes that the underlying model handles, but Wan2.2-Animate doesn't.
+        i2v_resolution = "480*832"
     elif "*" in res_str:
         i2v_resolution = res_str
     else:
