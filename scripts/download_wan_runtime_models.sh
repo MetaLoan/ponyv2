@@ -14,6 +14,9 @@ VAE_NAME="${VAE_NAME:-wan_2.1_vae.safetensors}"
 VAE_URL="${VAE_URL:-$HF_BASE_21/vae/wan_2.1_vae.safetensors}"
 TEXT_ENCODER_NAME="${TEXT_ENCODER_NAME:-umt5_xxl_fp8_e4m3fn_scaled.safetensors}"
 TEXT_ENCODER_URL="${TEXT_ENCODER_URL:-$HF_BASE_21/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors}"
+# bf16 text encoder required by Kijai WanVideoTextEncodeCached (rejects fp8 scaled)
+TEXT_ENCODER_BF16_NAME="${TEXT_ENCODER_BF16_NAME:-umt5-xxl-enc-bf16.safetensors}"
+TEXT_ENCODER_BF16_URL="${TEXT_ENCODER_BF16_URL:-https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-bf16.safetensors}"
 CLIP_VISION_NAME="${CLIP_VISION_NAME:-clip_vision_h.safetensors}"
 CLIP_VISION_URL="${CLIP_VISION_URL:-$HF_BASE_21/clip_vision/clip_vision_h.safetensors}"
 
@@ -87,6 +90,7 @@ download_civitai() {
 
 download_http "$VAE_URL" "$MODELS_DIR/vae/$VAE_NAME"
 download_http "$TEXT_ENCODER_URL" "$MODELS_DIR/text_encoders/$TEXT_ENCODER_NAME"
+download_http "$TEXT_ENCODER_BF16_URL" "$MODELS_DIR/text_encoders/$TEXT_ENCODER_BF16_NAME"
 download_http "$CLIP_VISION_URL" "$MODELS_DIR/clip_vision/$CLIP_VISION_NAME"
 
 if existing_h="$(resolve_existing_model "$Q8H_NAME" "$MODELS_DIR/unet" "$MODELS_DIR/diffusion_models/$Q8H_NAME")"; then
