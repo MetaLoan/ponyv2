@@ -1740,6 +1740,18 @@ def _generate_wan_dwpose_extract(data: dict, request_id: str, event: dict = None
     prompt["72"]["inputs"]["video"] = video_filename
     prompt["201"]["inputs"]["filename_prefix"] = f"dwpose_stickman_{request_id}"
     prompt["202"]["inputs"]["filename_prefix"] = f"dwpose_face_{request_id}"
+
+    # Inline the values that 113/115/120 used to compute. Those nodes are from
+    # ComfyUI-essentials / ttN custom packs that aren't installed in the image,
+    # which made the prompt fail validation with "Node SimpleMath+ not found".
+    frame_rate = int(data.get("frame_rate", 16))  # animate workflow runs at 16fps
+    frame_load_cap = int(data.get("frame_load_cap", 0))  # 0 = load all source frames
+    prompt["72"]["inputs"]["force_rate"] = frame_rate
+    prompt["72"]["inputs"]["frame_load_cap"] = frame_load_cap
+    prompt["201"]["inputs"]["frame_rate"] = frame_rate
+    prompt["202"]["inputs"]["frame_rate"] = frame_rate
+    for stub_id in ("113", "115", "120"):
+        prompt.pop(stub_id, None)
     
     _check_cancelled(request_id)
     prompt_id = queue_prompt(prompt)
