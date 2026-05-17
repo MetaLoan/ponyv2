@@ -1827,6 +1827,11 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
         # referenced; it must be present at
         # /workspace/runpod-slim/ComfyUI/models/text_encoders/.
         prompt["61"]["inputs"]["model_name"] = "umt5-xxl-enc-bf16.safetensors"
+        # Run text encoding on CPU so the ~10.5GB umt5 weights don't stay
+        # resident on GPU through the sampler step. Text encoding is one-shot
+        # and the CPU overhead is small compared to keeping the model offloaded
+        # via block-swap.
+        prompt["61"]["inputs"]["device"] = "cpu"
 
     # Model loader: the on-disk file is fp8 scaled, but
     # quantization="disabled" causes Kijai's loader to de-scale it back to
