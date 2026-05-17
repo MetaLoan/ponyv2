@@ -1917,6 +1917,22 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
             prompt[sampler_id]["inputs"]["seed"] = int(data["seed"])
         if "steps" in data:
             prompt[sampler_id]["inputs"]["steps"] = int(data["steps"])
+        if "cfg" in data:
+            prompt[sampler_id]["inputs"]["cfg"] = float(data["cfg"])
+        if "shift" in data:
+            prompt[sampler_id]["inputs"]["shift"] = float(data["shift"])
+        if "scheduler" in data:
+            prompt[sampler_id]["inputs"]["scheduler"] = str(data["scheduler"])
+        if "denoise_strength" in data:
+            prompt[sampler_id]["inputs"]["denoise_strength"] = float(data["denoise_strength"])
+    # WanVideoAnimateEmbeds pose/face strength overrides
+    if "84" in prompt:
+        if "pose_strength" in data:
+            prompt["84"]["inputs"]["pose_strength"] = float(data["pose_strength"])
+        if "face_strength" in data:
+            prompt["84"]["inputs"]["face_strength"] = float(data["face_strength"])
+        if "colormatch" in data:
+            prompt["84"]["inputs"]["colormatch"] = str(data["colormatch"])
     
     if "132" in prompt: # Some workflows use this for steps
         if "steps" in data:
@@ -2088,7 +2104,12 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # Do NOT forward wan_unet_high_name / wan_vae_name / wan_clip_vision_name —
     # animate workflow requires Wan2_2-Animate-14B (in diffusion_models/Wan22Animate/),
     # which is a different model from the FastMove I2V unet the caller may specify.
-    for k in ("seed", "steps", "wan_loras"):
+    for k in (
+        "seed", "steps", "cfg", "shift", "scheduler", "denoise_strength",
+        "wan_loras",
+        "attention_mode", "blocks_to_swap",
+        "pose_strength", "face_strength", "colormatch",
+    ):
         if k in data:
             animate_payload[k] = data[k]
 

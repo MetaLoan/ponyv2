@@ -199,6 +199,22 @@ function App() {
   const [i2vWatermark, setI2VWatermark] = useState(false);
   const [outputFormat, setOutputFormat] = useState<"jpg" | "png">("jpg");
   const [jpgQuality, setJpgQuality] = useState(85);
+
+  // Wan2.2 V2V (Animate) specific knobs — defaults match workflow / handler caps.
+  const [wanV2vFrames, setWanV2vFrames] = useState(25);
+  const [wanV2vResolution, setWanV2vResolution] = useState<"480P" | "720P">("480P");
+  const [wanV2vCfg, setWanV2vCfg] = useState(1);
+  const [wanV2vShift, setWanV2vShift] = useState(3);
+  const [wanV2vScheduler, setWanV2vScheduler] = useState("dpm++_sde");
+  const [wanV2vFrameWindowSize, setWanV2vFrameWindowSize] = useState(81);
+  const [wanV2vAttentionMode, setWanV2vAttentionMode] = useState<"sageattn" | "sdpa" | "flash_attn_3" | "comfy">("sageattn");
+  const [wanV2vBlocksToSwap, setWanV2vBlocksToSwap] = useState(25);
+  const [wanV2vRelightStrength, setWanV2vRelightStrength] = useState(0.5);
+  const [wanV2vLightx2vStrength, setWanV2vLightx2vStrength] = useState(1.0);
+  const [wanV2vPoseStrength, setWanV2vPoseStrength] = useState(1.0);
+  const [wanV2vFaceStrength, setWanV2vFaceStrength] = useState(0.5);
+  const [wanV2vColormatch, setWanV2vColormatch] = useState<"disabled" | "mkl" | "hm" | "reinhard" | "mvgd" | "hm-mvgd-hm" | "hm-mkl-hm">("disabled");
+  const [wanV2vAdvancedOpen, setWanV2vAdvancedOpen] = useState(false);
   const [renderResult, setRenderResult] = useState<GenerateResult | null>(null);
   const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
   const [busy, setBusy] = useState<"" | "render" | "generate">("");
@@ -605,16 +621,36 @@ function App() {
         body.reference_image = await resolveMedia(referenceMedia);
         body.prompt = prompt;
         if (negativePrompt) body.negative_prompt = negativePrompt;
-        body.frames = frames;
-        
-        let w = width; let h = height;
-        if (i2vResolution === "720P") { w = 720; h = 1280; }
-        else if (i2vResolution === "480P") { w = 480; h = 832; }
-        else if (i2vResolution === "1080P") { w = 1080; h = 1920; }
-        body.width = w; body.height = h;
+
+        // Frames — handler hard-caps at 49 anyway, send the user's requested value
+        body.frames = wanV2vFrames;
+
+        // Resolution — send both i2v_resolution string AND width/height ints. Handler
+        // accepts either; sending both keeps the proxy from defaulting to "1080P".
+        let w = 480, h = 832;
+        if (wanV2vResolution === "720P") { w = 720; h = 1280; }
+        body.i2v_resolution = wanV2vResolution;
+        body.width = w;
+        body.height = h;
+
         body.seed = seed;
         body.steps = steps;
-        
+        body.cfg = wanV2vCfg;
+        body.shift = wanV2vShift;
+        body.scheduler = wanV2vScheduler;
+        body.frame_window_size = wanV2vFrameWindowSize;
+        body.attention_mode = wanV2vAttentionMode;
+        body.blocks_to_swap = wanV2vBlocksToSwap;
+        body.pose_strength = wanV2vPoseStrength;
+        body.face_strength = wanV2vFaceStrength;
+        body.colormatch = wanV2vColormatch;
+
+        // Animate LoRAs — let user override the default relight + lightx2v strengths.
+        body.wan_loras = [
+          { name: "WanAnimate_relight_lora_fp16.safetensors", strength_model: wanV2vRelightStrength },
+          { name: "lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors", strength_model: wanV2vLightx2vStrength },
+        ];
+
         if (wanVideoEditType === "extract") {
           if (!actionVideoMedia.file && !actionVideoMedia.url.trim()) throw new Error("Missing Raw Action Video");
           body.video_url = await resolveMedia(actionVideoMedia);
@@ -1135,7 +1171,7 @@ function App() {
                   accept="video/*"
                 />
                 <MediaCard
-                  title="Baked Depth Video"
+                  title="Baked Face Video"
                   media={bakedDepthMedia}
                   onKindChange={(kind) => updateMedia("bakedDepth", { kind })}
                   onFileChange={(e) => onFileChange("bakedDepth", e)}
@@ -1144,6 +1180,121 @@ function App() {
                 />
               </>
             )}
+
+            <section className="card">
+              <h2>Wan V2V Parameters</h2>
+              <p className="muted compact">
+                Sent as both <code>i2v_resolution</code> and <code>width</code>/<code>height</code>.
+                Handler hard-caps frames at 49 and downgrades 1080P → 480P.
+              </p>
+              <div className="inline">
+                <label>
+                  Output Resolution
+                  <select
+                    value={wanV2vResolution}
+                    onChange={(e) => setWanV2vResolution(e.target.value as "480P" | "720P")}
+                  >
+                    <option value="480P">480P (480×832)</option>
+                    <option value="720P">720P (720×1280)</option>
+                  </select>
+                </label>
+                <NumberField label="Frames (≤49)" value={wanV2vFrames} onChange={setWanV2vFrames} min={1} max={49} step={1} />
+              </div>
+              <div className="inline">
+                <NumberField label="Seed" value={seed} onChange={setSeed} min={0} max={9999999999999999} step={1} />
+                <button type="button" className="ghost" onClick={() => setSeed(Math.floor(Math.random() * 1e15))}>
+                  Random Seed
+                </button>
+              </div>
+              <div className="inline">
+                <NumberField label="Steps" value={steps} onChange={setSteps} min={1} max={50} step={1} />
+                <NumberField label="CFG" value={wanV2vCfg} onChange={setWanV2vCfg} min={1} max={20} step={0.5} />
+                <NumberField label="Shift" value={wanV2vShift} onChange={setWanV2vShift} min={0} max={20} step={0.1} />
+              </div>
+              <div className="inline">
+                <label>
+                  Scheduler
+                  <select value={wanV2vScheduler} onChange={(e) => setWanV2vScheduler(e.target.value)}>
+                    <option value="dpm++_sde">dpm++_sde</option>
+                    <option value="dpm++_2m_sde">dpm++_2m_sde</option>
+                    <option value="euler">euler</option>
+                    <option value="euler_a">euler_a</option>
+                    <option value="unipc">unipc</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Negative Prompt
+                <textarea
+                  rows={3}
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                />
+              </label>
+            </section>
+
+            <section className="card">
+              <h2>
+                <button
+                  type="button"
+                  className="ghost compact"
+                  onClick={() => setWanV2vAdvancedOpen(!wanV2vAdvancedOpen)}
+                >
+                  {wanV2vAdvancedOpen ? "▼" : "▶"} Advanced
+                </button>
+              </h2>
+              {wanV2vAdvancedOpen && (
+                <>
+                  <p className="muted compact">
+                    Tune attention / VRAM / pose-control trade-offs. Defaults match the
+                    workflow and work on 32GB GPUs.
+                  </p>
+                  <div className="inline">
+                    <label>
+                      Attention Mode
+                      <select
+                        value={wanV2vAttentionMode}
+                        onChange={(e) => setWanV2vAttentionMode(e.target.value as typeof wanV2vAttentionMode)}
+                      >
+                        <option value="sageattn">sageattn (fastest, needs sm_120 on 5090)</option>
+                        <option value="sdpa">sdpa (PyTorch native, slow but safe)</option>
+                        <option value="flash_attn_3">flash_attn_3</option>
+                        <option value="comfy">comfy</option>
+                      </select>
+                    </label>
+                    <NumberField label="Blocks to Swap" value={wanV2vBlocksToSwap} onChange={setWanV2vBlocksToSwap} min={0} max={40} step={1} />
+                  </div>
+                  <div className="inline">
+                    <NumberField label="Frame Window Size" value={wanV2vFrameWindowSize} onChange={setWanV2vFrameWindowSize} min={1} max={81} step={1} />
+                  </div>
+                  <div className="inline">
+                    <NumberField label="Pose Strength" value={wanV2vPoseStrength} onChange={setWanV2vPoseStrength} min={0} max={2} step={0.05} />
+                    <NumberField label="Face Strength" value={wanV2vFaceStrength} onChange={setWanV2vFaceStrength} min={0} max={2} step={0.05} />
+                  </div>
+                  <div className="inline">
+                    <label>
+                      Colormatch
+                      <select
+                        value={wanV2vColormatch}
+                        onChange={(e) => setWanV2vColormatch(e.target.value as typeof wanV2vColormatch)}
+                      >
+                        <option value="disabled">disabled</option>
+                        <option value="mkl">mkl</option>
+                        <option value="hm">hm</option>
+                        <option value="reinhard">reinhard</option>
+                        <option value="mvgd">mvgd</option>
+                        <option value="hm-mvgd-hm">hm-mvgd-hm</option>
+                        <option value="hm-mkl-hm">hm-mkl-hm</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="inline">
+                    <NumberField label="Relight LoRA" value={wanV2vRelightStrength} onChange={setWanV2vRelightStrength} min={0} max={2} step={0.05} />
+                    <NumberField label="LightX2V LoRA" value={wanV2vLightx2vStrength} onChange={setWanV2vLightx2vStrength} min={0} max={2} step={0.05} />
+                  </div>
+                </>
+              )}
+            </section>
           </>
         )}
 
