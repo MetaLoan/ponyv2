@@ -1841,8 +1841,12 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
         prompt["302"]["inputs"]["video"] = resolve_media_to_comfy_filename(face_url, "face_video")
     if "55" in prompt:
         prompt["55"]["inputs"]["image"] = resolve_media_to_comfy_filename(char_img, "image")
-    if "122" in prompt:
-        prompt["122"]["inputs"]["text"] = data.get("prompt", "这个角色在跳舞")
+    # Inline node 122 ("Text" / 简单咒语) — that custom node isn't installed in
+    # the runtime image. Its only consumer is node 61's positive_prompt input.
+    positive_prompt_text = data.get("prompt", "这个角色在跳舞")
+    if "61" in prompt:
+        prompt["61"]["inputs"]["positive_prompt"] = positive_prompt_text
+    prompt.pop("122", None)
     if "81" in prompt:
         prompt["81"]["inputs"]["filename_prefix"] = f"wan_animate_{request_id}"
     
