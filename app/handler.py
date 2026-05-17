@@ -2016,8 +2016,12 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # Cap the number of frames flowing through the pipeline. The animate
     # workflow's attention cost is roughly quadratic in (frames * spatial
     # tokens), so without an explicit cap we'd extract the whole source video
-    # and OOM in the sampler. Default to 81 (one animate window).
-    requested_frames = int(data.get("frames", 81) or 81)
+    # and OOM in the sampler. Some proxies put per-request knobs under
+    # "parameters" instead of merging into the top-level input dict, so check
+    # both. Default conservatively at 49 frames (~3s @ 16fps) to fit 32GB
+    # GPUs at 480p without manual override.
+    params = data.get("parameters") or {}
+    requested_frames = int(data.get("frames") or params.get("frames") or 49)
 
     if baked_skeleton and baked_face:
         pose_video_url = baked_skeleton
