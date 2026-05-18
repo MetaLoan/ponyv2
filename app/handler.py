@@ -1941,6 +1941,14 @@ def _generate_wan_animate(data: dict, request_id: str, event: dict = None) -> di
             prompt["84"]["inputs"]["face_strength"] = float(data["face_strength"])
         if "colormatch" in data:
             prompt["84"]["inputs"]["colormatch"] = str(data["colormatch"])
+        # Always tile the VAE encode. Encoding pose+face videos at
+        # 832×480×49 frames in one shot allocates ~19.54 GiB and OOMs
+        # even on a 32GB 5090. Tiled encoding keeps peak under control
+        # with negligible quality difference for the conditioning path.
+        prompt["84"]["inputs"]["tiled_vae"] = True
+        # Force-offload the VAE/clip after use so the diffusion sampler
+        # has room to load blocks on demand.
+        prompt["84"]["inputs"]["force_offload"] = True
     
     if "132" in prompt: # Some workflows use this for steps
         if "steps" in data:
@@ -2049,7 +2057,9 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # other modes but blow up animate. Always clamp the resolved frame
     # count to <= 49 (~3s @ 16fps) regardless of what comes in.
     params = data.get("parameters") or {}
-    raw_frames = int(data.get("frames") or params.get("frames") or 49)
+    # Same priority issue as resolution — user parameters win over proxy
+    # SDXL defaults (frames=161).
+    raw_frames = int(params.get("frames") or data.get("frames") or 49)
     requested_frames = max(1, min(raw_frames, 49))
     # Write a debug breadcrumb to /tmp because the runpod entry pid 1 stdout
     # is captured into a pipe we can't tail from the worker shell.
@@ -2096,9 +2106,16 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         except (TypeError, ValueError):
             return None
 
-    explicit_w = _to_int(data.get("width"))
-    explicit_h = _to_int(data.get("height"))
-    res_str = str(data.get("resolution") or data.get("i2v_resolution") or "").strip().upper()
+    # Caller-provided "parameters" wins over top-level data, because the
+    # proxy injects SDXL defaults (width=832, height=1216, etc.) into the
+    # top-level input. User-supplied parameters belong in the parameters
+    # subdict, which we trust.
+    explicit_w = _to_int(params.get("width") or data.get("width"))
+    explicit_h = _to_int(params.get("height") or data.get("height"))
+    res_str = str(
+        params.get("resolution") or params.get("i2v_resolution")
+        or data.get("resolution") or data.get("i2v_resolution") or ""
+    ).strip().upper()
 
     if explicit_w and explicit_h:
         # Caller gave us exact dimensions — that's the source of truth.

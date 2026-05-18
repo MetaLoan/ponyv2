@@ -95,7 +95,16 @@ def wait_comfy_ready(api_url: str, timeout_sec: int) -> None:
 def start_comfy_if_needed() -> None:
     api_url = os.getenv("COMFY_API_URL", "http://127.0.0.1:8188")
     boot_timeout = int(os.getenv("COMFY_BOOT_TIMEOUT", "360"))
-    
+
+    # Reduce CUDA fragmentation. Wan2.2 animate's VAE encode + sampler hit
+    # ~20 GiB "reserved but unallocated" on a 32GB card without this — small
+    # peaks fail allocation even though we have headroom. expandable_segments
+    # lets PyTorch grow allocations without needing contiguous blocks.
+    os.environ.setdefault(
+        "PYTORCH_CUDA_ALLOC_CONF",
+        "expandable_segments:True,max_split_size_mb:512",
+    )
+
     # Use default ComfyUI VRAM management
     base_cmd = "python3 -u /workspace/runpod-slim/ComfyUI/main.py --listen 127.0.0.1 --port 8188 --disable-cuda-malloc"
 
