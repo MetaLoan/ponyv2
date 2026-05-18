@@ -253,7 +253,11 @@ def _guess_extension(content_type: str, fallback: str = ".jpg") -> str:
 
 
 def _download_url_to_input(url: str, prefix: str) -> str:
-    r = requests.get(url, timeout=60)
+    # Use a non-bot User-Agent — some hosts (e.g. filebin.net) check for
+    # python-requests UA and serve an HTML landing page instead of the
+    # actual file, which then fails downstream ("could not be loaded with cv").
+    headers = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
+    r = requests.get(url, timeout=60, headers=headers, allow_redirects=True)
     r.raise_for_status()
     ext = _guess_extension(r.headers.get("content-type", ""))
     name = f"{prefix}_{uuid.uuid4().hex}{ext}"
@@ -285,7 +289,7 @@ def resolve_media_to_comfy_filename(media: str, prefix: str) -> str:
 
 def _decode_media_bytes(media: str) -> Tuple[bytes, str]:
     if media.startswith("http://") or media.startswith("https://"):
-        r = requests.get(media, timeout=60)
+        r = requests.get(media, timeout=60, headers={"User-Agent": "Mozilla/5.0", "Accept": "*/*"}, allow_redirects=True)
         r.raise_for_status()
         content_type = r.headers.get("content-type", "")
         return r.content, content_type
