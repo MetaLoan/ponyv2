@@ -2076,31 +2076,39 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         face_video_url = extract_resp["face_video_url"]
         extract_prompt_id = extract_resp.get("prompt_id")
 
-    # Orientation hint: portrait by default (animate's most common training case),
-    # but width > height in the explicit dims means landscape.
-    explicit_w = data.get("width")
-    explicit_h = data.get("height")
-    is_landscape = (
-        isinstance(explicit_w, (int, float)) and isinstance(explicit_h, (int, float))
-        and explicit_w > explicit_h
-    )
+    # Resolve final WxH. Priority:
+    #   1. Explicit width+height (any numeric form) — accept as-is.
+    #   2. resolution / i2v_resolution string with "*" — accept as-is.
+    #   3. resolution / i2v_resolution keyword (480P / 720P / 1080P) —
+    #      pick portrait or landscape based on whichever dim is larger.
+    def _to_int(v):
+        try:
+            iv = int(float(v))
+            return iv if iv > 0 else None
+        except (TypeError, ValueError):
+            return None
 
+    explicit_w = _to_int(data.get("width"))
+    explicit_h = _to_int(data.get("height"))
     res_str = str(data.get("resolution") or data.get("i2v_resolution") or "").strip().upper()
-    if "*" in res_str:
-        # Explicit WxH like "832*480" — honor as-is.
+
+    if explicit_w and explicit_h:
+        # Caller gave us exact dimensions — that's the source of truth.
+        i2v_resolution = f"{explicit_w}*{explicit_h}"
+    elif "*" in res_str:
         i2v_resolution = res_str
-    elif "480" in res_str:
-        i2v_resolution = "832*480" if is_landscape else "480*832"
-    elif "720" in res_str:
-        i2v_resolution = "1280*720" if is_landscape else "720*1280"
-    elif "1080" in res_str:
-        # 1080P × any frame count on a 32GB GPU OOMs the animate sampler.
-        # Downgrade to 480P, preserving requested orientation.
-        i2v_resolution = "832*480" if is_landscape else "480*832"
     else:
-        width = int(data.get("width", 720))
-        height = int(data.get("height", 1280))
-        i2v_resolution = f"{width}*{height}"
+        is_landscape = bool(explicit_w and explicit_h and explicit_w > explicit_h)
+        if "480" in res_str:
+            i2v_resolution = "832*480" if is_landscape else "480*832"
+        elif "720" in res_str:
+            i2v_resolution = "1280*720" if is_landscape else "720*1280"
+        elif "1080" in res_str:
+            # 1080P × any frame count on a 32GB GPU OOMs the animate sampler.
+            # Downgrade to 480P, preserving orientation if known.
+            i2v_resolution = "832*480" if is_landscape else "480*832"
+        else:
+            i2v_resolution = "480*832"
 
     animate_payload = {
         "character_image_url": reference_image,
