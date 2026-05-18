@@ -253,10 +253,14 @@ def _guess_extension(content_type: str, fallback: str = ".jpg") -> str:
 
 
 def _download_url_to_input(url: str, prefix: str) -> str:
-    # Use a non-bot User-Agent — some hosts (e.g. filebin.net) check for
-    # python-requests UA and serve an HTML landing page instead of the
-    # actual file, which then fails downstream ("could not be loaded with cv").
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
+    # User-Agent matters here for two reasons:
+    #  1. python-requests/* triggers filebin's bot-detection landing page
+    #     (HTML), which then fails downstream as "could not be loaded with cv".
+    #  2. Mozilla/* triggers filebin's *browser* landing page (also HTML),
+    #     because they intentionally show humans a download confirmation UI.
+    # curl/* is the sweet spot — filebin (and similar hosts) treat curl as
+    # "CLI tool wants the bytes" and 302 to the actual file.
+    headers = {"User-Agent": "curl/8.7.1", "Accept": "*/*"}
     r = requests.get(url, timeout=60, headers=headers, allow_redirects=True)
     r.raise_for_status()
     ext = _guess_extension(r.headers.get("content-type", ""))
@@ -289,7 +293,7 @@ def resolve_media_to_comfy_filename(media: str, prefix: str) -> str:
 
 def _decode_media_bytes(media: str) -> Tuple[bytes, str]:
     if media.startswith("http://") or media.startswith("https://"):
-        r = requests.get(media, timeout=60, headers={"User-Agent": "Mozilla/5.0", "Accept": "*/*"}, allow_redirects=True)
+        r = requests.get(media, timeout=60, headers={"User-Agent": "curl/8.7.1", "Accept": "*/*"}, allow_redirects=True)
         r.raise_for_status()
         content_type = r.headers.get("content-type", "")
         return r.content, content_type
