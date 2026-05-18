@@ -2057,10 +2057,19 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # other modes but blow up animate. Always clamp the resolved frame
     # count to <= 49 (~3s @ 16fps) regardless of what comes in.
     params = data.get("parameters") or {}
-    # Same priority issue as resolution — user parameters win over proxy
-    # SDXL defaults (frames=161).
-    raw_frames = int(params.get("frames") or data.get("frames") or 49)
-    requested_frames = max(1, min(raw_frames, 49))
+    # When the proxy injects SDXL defaults (detected below by ckpt_name etc.),
+    # data["frames"] is the SDXL default (161), not the user's request. Skip
+    # data.frames in that case — params.frames or v2v_frames or hardcoded 25.
+    _proxy_polluted_early = any(
+        k in data for k in ("ckpt_name", "pulid_method", "base_steps", "base_cfg", "base_sampler_name")
+    )
+    raw_frames = (
+        params.get("frames")
+        or data.get("v2v_frames")
+        or (None if _proxy_polluted_early else data.get("frames"))
+        or 25
+    )
+    requested_frames = max(1, min(int(raw_frames), 49))
     # Write a debug breadcrumb to /tmp because the runpod entry pid 1 stdout
     # is captured into a pipe we can't tail from the worker shell.
     try:
@@ -2106,15 +2115,37 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         except (TypeError, ValueError):
             return None
 
-    # Caller-provided "parameters" wins over top-level data, because the
-    # proxy injects SDXL defaults (width=832, height=1216, etc.) into the
-    # top-level input. User-supplied parameters belong in the parameters
-    # subdict, which we trust.
-    explicit_w = _to_int(params.get("width") or data.get("width"))
-    explicit_h = _to_int(params.get("height") or data.get("height"))
+    # The proxy fronting this endpoint unpacks user's "parameters" subdict
+    # into the top-level input AND merges SDXL-mode defaults (width=832,
+    # height=1216, steps=40, ckpt_name=..., pulid_*, base_*) on top — proxy
+    # values usually win the merge. Result: data["width"]=832, ["height"]=
+    # 1216, ["steps"]=40 even when the user explicitly asked for 480x832/4.
+    #
+    # Detect "proxy SDXL pollution" by the presence of SDXL-only fields, and
+    # in that case ignore top-level dims/steps for V2V — they're never the
+    # user's actual intent. Fall back to V2V safe defaults (480x832 / 4 steps)
+    # unless the caller used an explicit override channel (params.* or
+    # v2v_*-prefixed top-level fields).
+    _SDXL_POLLUTION_KEYS = ("ckpt_name", "pulid_method", "base_steps", "base_cfg", "base_sampler_name")
+    proxy_polluted = any(k in data for k in _SDXL_POLLUTION_KEYS)
+
+    def _explicit(field: str):
+        # Prefer params.field, then v2v_<field>, then (only if not polluted)
+        # data.field. None if nothing usable.
+        v = params.get(field)
+        if v is None:
+            v = data.get(f"v2v_{field}")
+        if v is None and not proxy_polluted:
+            v = data.get(field)
+        return v
+
+    explicit_w = _to_int(_explicit("width"))
+    explicit_h = _to_int(_explicit("height"))
     res_str = str(
         params.get("resolution") or params.get("i2v_resolution")
-        or data.get("resolution") or data.get("i2v_resolution") or ""
+        or data.get("v2v_resolution")
+        or (None if proxy_polluted else (data.get("resolution") or data.get("i2v_resolution")))
+        or ""
     ).strip().upper()
 
     if explicit_w and explicit_h:
@@ -2135,6 +2166,12 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         else:
             i2v_resolution = "480*832"
 
+    print(
+        f"[V2V] resolution={i2v_resolution} proxy_polluted={proxy_polluted} "
+        f"params_keys={sorted(params.keys())} requested_frames={requested_frames}",
+        flush=True,
+    )
+
     animate_payload = {
         "character_image_url": reference_image,
         "pose_video_url": pose_video_url,
@@ -2146,14 +2183,27 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
     # Do NOT forward wan_unet_high_name / wan_vae_name / wan_clip_vision_name —
     # animate workflow requires Wan2_2-Animate-14B (in diffusion_models/Wan22Animate/),
     # which is a different model from the FastMove I2V unet the caller may specify.
+    #
+    # When the proxy is polluting input, data["steps"]=40 / data["cfg"]=4 etc
+    # are SDXL defaults, not the user's V2V request. Pull only from params or
+    # v2v_*-prefixed top-level keys in that case. Hardcoded fallbacks (steps=4,
+    # cfg=1, shift=3) are V2V-safe; the LightX2V LoRA needs them to behave.
+    _V2V_DEFAULTS = {"steps": 4, "cfg": 1, "shift": 3, "denoise_strength": 1.0}
     for k in (
         "seed", "steps", "cfg", "shift", "denoise_strength",
         "wan_loras",
         "attention_mode", "blocks_to_swap",
         "pose_strength", "face_strength", "colormatch",
     ):
-        if k in data:
-            animate_payload[k] = data[k]
+        v = params.get(k)
+        if v is None:
+            v = data.get(f"v2v_{k}")
+        if v is None and not proxy_polluted:
+            v = data.get(k)
+        if v is None and k in _V2V_DEFAULTS:
+            v = _V2V_DEFAULTS[k]
+        if v is not None:
+            animate_payload[k] = v
     # Scheduler — the proxy injects SDXL defaults ("karras", etc.) for every
     # request, but Kijai's WanVideoSampler only accepts its own ~21 schedulers
     # (dpm++_sde, dpm++_2m_sde, unipc, euler, etc.). Whitelist what we know is
@@ -2164,7 +2214,11 @@ def _generate_wan_video_edit(data: dict, request_id: str, event: dict = None) ->
         "ddim", "ddpm", "lcm", "flowmatch_causvid", "flowmatch_distill",
         "flowmatch_pusa", "flowmatch_fast", "uniwave",
     }
-    sched_in = data.get("scheduler")
+    sched_in = (
+        params.get("scheduler")
+        or data.get("v2v_scheduler")
+        or (None if proxy_polluted else data.get("scheduler"))
+    )
     if isinstance(sched_in, str) and sched_in.strip() in _WAN_SCHEDULER_WHITELIST:
         animate_payload["scheduler"] = sched_in.strip()
 
