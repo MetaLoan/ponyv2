@@ -1012,7 +1012,7 @@ def validate_required_node_types(prompt: Dict) -> None:
         )
 
 
-def wait_history(prompt_id: str, timeout_sec: int = 1200, event: Dict = None, request_id: str = "") -> Dict:
+def wait_history(prompt_id: str, timeout_sec: int = 1800, event: Dict = None, request_id: str = "") -> Dict:
     deadline = time.time() + timeout_sec
     log_file = Path("/tmp/comfy.log")
     f = None
