@@ -150,7 +150,7 @@
       "samples": ["103", 0],
       "vae": ["39", 0]
     },
-    "class_type": "VAEDecode"
+    "class_type": "VAEDecodeTiled"
   },
   "47": {
     "inputs": {

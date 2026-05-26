@@ -1,7 +1,7 @@
 {
   "26": {
     "inputs": {
-      "enable_vae_tiling": false,
+      "enable_vae_tiling": true,
       "tile_x": 272,
       "tile_y": 272,
       "tile_stride_x": 144,
